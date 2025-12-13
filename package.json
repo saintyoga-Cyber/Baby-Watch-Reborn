@@ -44,12 +44,6 @@
           "type": "png"
         },
         {
-          "file": "images/icon.png",
-          "menuIcon": true,
-          "name": "IMAGE_ICON",
-          "type": "png"
-        },
-        {
           "file": "images/moon.png",
           "name": "IMAGE_MOON",
           "type": "png-trans"

@@ -13,9 +13,7 @@
     "sdkVersion": "3",
     "enableMultiJS": false,
     "targetPlatforms": [
-      "aplite",
-      "basalt",
-      "chalk"
+      "basalt"
     ],
     "watchapp": {
       "watchface": false

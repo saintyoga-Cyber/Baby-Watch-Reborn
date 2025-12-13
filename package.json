@@ -47,7 +47,7 @@
           "file": "images/icon.png",
           "menuIcon": true,
           "name": "IMAGE_ICON",
-          "type": "png"
+          "type": "bitmap"
         },
         {
           "file": "images/moon.png",

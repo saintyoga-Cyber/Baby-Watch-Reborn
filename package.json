@@ -1,0 +1,29 @@
+{
+  "name": "baby-watch",
+  "author": "mig.jcb@gmail.com",
+  "version": "1.4.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Baby Watch",
+    "uuid": "2a2e6d45-7240-4706-933a-3b521cf17490",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],
+    "watchapp": {
+      "watchface": false
+    },
+    "capabilities": ["configurable"],
+    "resources": {
+      "media": [
+        {"type": "png", "name": "ACTION_MOON", "file": "images/moonaction.png"},
+        {"type": "png", "name": "ACTION_DIAPER", "file": "images/diaperaction.png"},
+        {"type": "png", "name": "ACTION_BOTTLE", "file": "images/bottleaction.png"},
+        {"type": "png-trans", "name": "IMAGE_MOON", "file": "images/moon.png"},
+        {"type": "png-trans", "name": "IMAGE_DIAPER", "file": "images/diaper.png"},
+        {"type": "png-trans", "name": "IMAGE_BOTTLE", "file": "images/bottle.png"}
+      ]
+    }
+  }
+}

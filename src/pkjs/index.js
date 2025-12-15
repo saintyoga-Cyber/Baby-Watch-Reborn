@@ -6,8 +6,8 @@ var PERSIST_MOON_END = 4;
 
 var memoryArray = {};
 
-// Settings page hosted on GitHub Pages - simple URL without hash data
-var SETTINGS_PAGE = 'https://saintyoga-cyber.github.io/Baby-Watch-Reborn/settings.html';
+// Settings page hosted on GitHub Pages - use HTTP like PebbleChecklist
+var SETTINGS_PAGE = 'http://saintyoga-cyber.github.io/Baby-Watch-Reborn/settings.html';
 
 Pebble.addEventListener("ready",
 function(e) {

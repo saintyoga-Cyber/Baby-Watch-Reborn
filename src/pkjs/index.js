@@ -6,88 +6,90 @@ var PERSIST_MOON_END = 4;
 
 var memoryArray = {};
 
-// Embedded settings page (works offline)
-var SETTINGS_PAGE = 'data:text/html;base64,PCFET0NUWVBFIGh0bWw+CjxodG1sPgo8aGVhZD4KICA8bWV0YSBjaGFyc2V0PSJVVEYtOCI+CiAgPG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xLjAiPgogIDx0aXRsZT5CYWJ5IFdhdGNoIFNldHRpbmdzPC90aXRsZT4KICA8c3R5bGU+CiAgICAqIHsgYm94LXNpemluZzogYm9yZGVyLWJveDsgbWFyZ2luOiAwOyBwYWRkaW5nOiAwOyB9CiAgICBib2R5IHsKICAgICAgZm9udC1mYW1pbHk6IC1hcHBsZS1zeXN0ZW0sIEJsaW5rTWFjU3lzdGVtRm9udCwgJ1NlZ29lIFVJJywgUm9ib3RvLCBzYW5zLXNlcmlmOwogICAgICBiYWNrZ3JvdW5kOiBsaW5lYXItZ3JhZGllbnQoMTM1ZGVnLCAjMWExYTJlIDAlLCAjMTYyMTNlIDEwMCUpOwogICAgICBjb2xvcjogI2ZmZjsKICAgICAgbWluLWhlaWdodDogMTAwdmg7CiAgICAgIHBhZGRpbmc6IDIwcHg7CiAgICB9CiAgICAuY29udGFpbmVyIHsgbWF4LXdpZHRoOiA0MDBweDsgbWFyZ2luOiAwIGF1dG87IH0KICAgIGgxIHsKICAgICAgdGV4dC1hbGlnbjogY2VudGVyOwogICAgICBmb250LXNpemU6IDI0cHg7CiAgICAgIG1hcmdpbi1ib3R0b206IDI0cHg7CiAgICAgIGNvbG9yOiAjMDBhYWZmOwogICAgfQogICAgLnNlY3Rpb24gewogICAgICBiYWNrZ3JvdW5kOiByZ2JhKDI1NSwyNTUsMjU1LDAuMSk7CiAgICAgIGJvcmRlci1yYWRpdXM6IDEycHg7CiAgICAgIHBhZGRpbmc6IDE2cHg7CiAgICAgIG1hcmdpbi1ib3R0b206IDE2cHg7CiAgICB9CiAgICAuc2VjdGlvbi10aXRsZSB7CiAgICAgIGZvbnQtc2l6ZTogMTZweDsKICAgICAgZm9udC13ZWlnaHQ6IDYwMDsKICAgICAgbWFyZ2luLWJvdHRvbTogMTJweDsKICAgICAgZGlzcGxheTogZmxleDsKICAgICAgYWxpZ24taXRlbXM6IGNlbnRlcjsKICAgICAgZ2FwOiA4cHg7CiAgICB9CiAgICAuaWNvbiB7IGZvbnQtc2l6ZTogMjBweDsgfQogICAgLmNvdW50IHsKICAgICAgYmFja2dyb3VuZDogIzAwYWFmZjsKICAgICAgY29sb3I6ICMwMDA7CiAgICAgIHBhZGRpbmc6IDJweCA4cHg7CiAgICAgIGJvcmRlci1yYWRpdXM6IDEycHg7CiAgICAgIGZvbnQtc2l6ZTogMTJweDsKICAgICAgZm9udC13ZWlnaHQ6IGJvbGQ7CiAgICB9CiAgICAuZW50cmllcyB7CiAgICAgIGZvbnQtc2l6ZTogMTNweDsKICAgICAgY29sb3I6IHJnYmEoMjU1LDI1NSwyNTUsMC43KTsKICAgICAgbWF4LWhlaWdodDogMTIwcHg7CiAgICAgIG92ZXJmbG93LXk6IGF1dG87CiAgICB9CiAgICAuZW50cnkgewogICAgICBwYWRkaW5nOiA0cHggMDsKICAgICAgYm9yZGVyLWJvdHRvbTogMXB4IHNvbGlkIHJnYmEoMjU1LDI1NSwyNTUsMC4xKTsKICAgIH0KICAgIC5lbnRyeTpsYXN0LWNoaWxkIHsgYm9yZGVyLWJvdHRvbTogbm9uZTsgfQogICAgLmVtcHR5IHsgZm9udC1zdHlsZTogaXRhbGljOyBvcGFjaXR5OiAwLjU7IH0KICAgIC5idG4gewogICAgICB3aWR0aDogMTAwJTsKICAgICAgcGFkZGluZzogMTRweDsKICAgICAgYm9yZGVyOiBub25lOwogICAgICBib3JkZXItcmFkaXVzOiA4cHg7CiAgICAgIGZvbnQtc2l6ZTogMTZweDsKICAgICAgZm9udC13ZWlnaHQ6IDYwMDsKICAgICAgY3Vyc29yOiBwb2ludGVyOwogICAgICBtYXJnaW4tdG9wOiA4cHg7CiAgICB9CiAgICAuYnRuLXJlc2V0IHsKICAgICAgYmFja2dyb3VuZDogI2ZmNDc1NzsKICAgICAgY29sb3I6ICNmZmY7CiAgICB9CiAgICAuYnRuLWNsb3NlIHsKICAgICAgYmFja2dyb3VuZDogIzAwYWFmZjsKICAgICAgY29sb3I6ICMwMDA7CiAgICB9CiAgICAud2FybmluZyB7CiAgICAgIHRleHQtYWxpZ246IGNlbnRlcjsKICAgICAgZm9udC1zaXplOiAxMnB4OwogICAgICBjb2xvcjogcmdiYSgyNTUsMjU1LDI1NSwwLjUpOwogICAgICBtYXJnaW4tdG9wOiA4cHg7CiAgICB9CiAgPC9zdHlsZT4KPC9oZWFkPgo8Ym9keT4KICA8ZGl2IGNsYXNzPSJjb250YWluZXIiPgogICAgPGgxPkJhYnkgV2F0Y2ggU2V0dGluZ3M8L2gxPgogICAgCiAgICA8ZGl2IGNsYXNzPSJzZWN0aW9uIj4KICAgICAgPGRpdiBjbGFzcz0ic2VjdGlvbi10aXRsZSI+CiAgICAgICAgPHNwYW4gY2xhc3M9Imljb24iPvCfjbw8L3NwYW4+IEZlZWRpbmdzIDxzcGFuIGNsYXNzPSJjb3VudCIgaWQ9ImJvdHRsZS1jb3VudCI+MDwvc3Bhbj4KICAgICAgPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9ImVudHJpZXMiIGlkPSJib3R0bGUtZW50cmllcyI+CiAgICAgICAgPGRpdiBjbGFzcz0iZW1wdHkiPk5vIGVudHJpZXMgeWV0PC9kaXY+CiAgICAgIDwvZGl2PgogICAgPC9kaXY+CiAgICAKICAgIDxkaXYgY2xhc3M9InNlY3Rpb24iPgogICAgICA8ZGl2IGNsYXNzPSJzZWN0aW9uLXRpdGxlIj4KICAgICAgICA8c3BhbiBjbGFzcz0iaWNvbiI+8J+Rtjwvc3Bhbj4gRGlhcGVyIENoYW5nZXMgPHNwYW4gY2xhc3M9ImNvdW50IiBpZD0iZGlhcGVyLWNvdW50Ij4wPC9zcGFuPgogICAgICA8L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0iZW50cmllcyIgaWQ9ImRpYXBlci1lbnRyaWVzIj4KICAgICAgICA8ZGl2IGNsYXNzPSJlbXB0eSI+Tm8gZW50cmllcyB5ZXQ8L2Rpdj4KICAgICAgPC9kaXY+CiAgICA8L2Rpdj4KICAgIAogICAgPGRpdiBjbGFzcz0ic2VjdGlvbiI+CiAgICAgIDxkaXYgY2xhc3M9InNlY3Rpb24tdGl0bGUiPgogICAgICAgIDxzcGFuIGNsYXNzPSJpY29uIj7wn4yZPC9zcGFuPiBTbGVlcCBTZXNzaW9ucyA8c3BhbiBjbGFzcz0iY291bnQiIGlkPSJzbGVlcC1jb3VudCI+MDwvc3Bhbj4KICAgICAgPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9ImVudHJpZXMiIGlkPSJzbGVlcC1lbnRyaWVzIj4KICAgICAgICA8ZGl2IGNsYXNzPSJlbXB0eSI+Tm8gZW50cmllcyB5ZXQ8L2Rpdj4KICAgICAgPC9kaXY+CiAgICA8L2Rpdj4KICAgIAogICAgPGJ1dHRvbiBjbGFzcz0iYnRuIGJ0bi1jbG9zZSIgb25jbGljaz0iY2xvc2VTZXR0aW5ncygpIj5Eb25lPC9idXR0b24+CiAgICA8YnV0dG9uIGNsYXNzPSJidG4gYnRuLXJlc2V0IiBvbmNsaWNrPSJyZXNldERhdGEoKSI+UmVzZXQgQWxsIERhdGE8L2J1dHRvbj4KICAgIDxwIGNsYXNzPSJ3YXJuaW5nIj5SZXNldCB3aWxsIGNsZWFyIGFsbCB0cmFja2VkIGRhdGEgZnJvbSB5b3VyIHdhdGNoPC9wPgogIDwvZGl2PgogIAogIDxzY3JpcHQ+CiAgICB2YXIgUEVSU0lTVF9CT1RUTEUgPSAxOwogICAgdmFyIFBFUlNJU1RfRElBUEVSID0gMjsKICAgIHZhciBQRVJTSVNUX01PT05fU1RBUlQgPSAzOwogICAgdmFyIFBFUlNJU1RfTU9PTl9FTkQgPSA0OwogICAgCiAgICBmdW5jdGlvbiBmb3JtYXRUaW1lKHRpbWVzdGFtcCkgewogICAgICB2YXIgZCA9IG5ldyBEYXRlKHRpbWVzdGFtcCAqIDEwMDApOwogICAgICB2YXIgbm93ID0gbmV3IERhdGUoKTsKICAgICAgdmFyIGlzVG9kYXkgPSBkLnRvRGF0ZVN0cmluZygpID09PSBub3cudG9EYXRlU3RyaW5nKCk7CiAgICAgIHZhciB5ZXN0ZXJkYXkgPSBuZXcgRGF0ZShub3cpOwogICAgICB5ZXN0ZXJkYXkuc2V0RGF0ZSh5ZXN0ZXJkYXkuZ2V0RGF0ZSgpIC0gMSk7CiAgICAgIHZhciBpc1llc3RlcmRheSA9IGQudG9EYXRlU3RyaW5nKCkgPT09IHllc3RlcmRheS50b0RhdGVTdHJpbmcoKTsKICAgICAgCiAgICAgIHZhciB0aW1lU3RyID0gZC50b0xvY2FsZVRpbWVTdHJpbmcoW10sIHtob3VyOiAnMi1kaWdpdCcsIG1pbnV0ZTogJzItZGlnaXQnfSk7CiAgICAgIAogICAgICBpZiAoaXNUb2RheSkgcmV0dXJuICdUb2RheSAnICsgdGltZVN0cjsKICAgICAgaWYgKGlzWWVzdGVyZGF5KSByZXR1cm4gJ1llc3RlcmRheSAnICsgdGltZVN0cjsKICAgICAgcmV0dXJuIGQudG9Mb2NhbGVEYXRlU3RyaW5nKCkgKyAnICcgKyB0aW1lU3RyOwogICAgfQogICAgCiAgICBmdW5jdGlvbiByZW5kZXJFbnRyaWVzKGVudHJpZXMsIGVsZW1lbnRJZCwgY291bnRJZCkgewogICAgICB2YXIgY29udGFpbmVyID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoZWxlbWVudElkKTsKICAgICAgdmFyIGNvdW50RWwgPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJZChjb3VudElkKTsKICAgICAgCiAgICAgIGlmICghZW50cmllcyB8fCBlbnRyaWVzLmxlbmd0aCA9PT0gMCkgewogICAgICAgIGNvbnRhaW5lci5pbm5lckhUTUwgPSAnPGRpdiBjbGFzcz0iZW1wdHkiPk5vIGVudHJpZXMgeWV0PC9kaXY+JzsKICAgICAgICBjb3VudEVsLnRleHRDb250ZW50ID0gJzAnOwogICAgICAgIHJldHVybjsKICAgICAgfQogICAgICAKICAgICAgY291bnRFbC50ZXh0Q29udGVudCA9IGVudHJpZXMubGVuZ3RoOwogICAgICB2YXIgc29ydGVkID0gZW50cmllcy5zbGljZSgpLnNvcnQoZnVuY3Rpb24oYSwgYikgeyByZXR1cm4gYiAtIGE7IH0pOwogICAgICB2YXIgaHRtbCA9IHNvcnRlZC5zbGljZSgwLCAxMCkubWFwKGZ1bmN0aW9uKHRzKSB7CiAgICAgICAgcmV0dXJuICc8ZGl2IGNsYXNzPSJlbnRyeSI+JyArIGZvcm1hdFRpbWUodHMpICsgJzwvZGl2Pic7CiAgICAgIH0pLmpvaW4oJycpOwogICAgICAKICAgICAgaWYgKGVudHJpZXMubGVuZ3RoID4gMTApIHsKICAgICAgICBodG1sICs9ICc8ZGl2IGNsYXNzPSJlbnRyeSBlbXB0eSI+Li4uYW5kICcgKyAoZW50cmllcy5sZW5ndGggLSAxMCkgKyAnIG1vcmU8L2Rpdj4nOwogICAgICB9CiAgICAgIGNvbnRhaW5lci5pbm5lckhUTUwgPSBodG1sOwogICAgfQogICAgCiAgICBmdW5jdGlvbiByZW5kZXJTbGVlcChzdGFydHMsIGVuZHMpIHsKICAgICAgdmFyIGNvbnRhaW5lciA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdzbGVlcC1lbnRyaWVzJyk7CiAgICAgIHZhciBjb3VudEVsID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NsZWVwLWNvdW50Jyk7CiAgICAgIAogICAgICBpZiAoKCFzdGFydHMgfHwgc3RhcnRzLmxlbmd0aCA9PT0gMCkgJiYgKCFlbmRzIHx8IGVuZHMubGVuZ3RoID09PSAwKSkgewogICAgICAgIGNvbnRhaW5lci5pbm5lckhUTUwgPSAnPGRpdiBjbGFzcz0iZW1wdHkiPk5vIGVudHJpZXMgeWV0PC9kaXY+JzsKICAgICAgICBjb3VudEVsLnRleHRDb250ZW50ID0gJzAnOwogICAgICAgIHJldHVybjsKICAgICAgfQogICAgICAKICAgICAgdmFyIHNlc3Npb25zID0gW107CiAgICAgIHZhciBtYXhMZW4gPSBNYXRoLm1heChzdGFydHMgPyBzdGFydHMubGVuZ3RoIDogMCwgZW5kcyA/IGVuZHMubGVuZ3RoIDogMCk7CiAgICAgIGNvdW50RWwudGV4dENvbnRlbnQgPSBtYXhMZW47CiAgICAgIAogICAgICBmb3IgKHZhciBpID0gMDsgaSA8IE1hdGgubWluKG1heExlbiwgMTApOyBpKyspIHsKICAgICAgICB2YXIgc3RhcnQgPSBzdGFydHMgJiYgc3RhcnRzW2ldID8gZm9ybWF0VGltZShzdGFydHNbaV0pIDogJz8nOwogICAgICAgIHZhciBlbmQgPSBlbmRzICYmIGVuZHNbaV0gPyBmb3JtYXRUaW1lKGVuZHNbaV0pIDogJ29uZ29pbmcnOwogICAgICAgIHNlc3Npb25zLnB1c2goJzxkaXYgY2xhc3M9ImVudHJ5Ij4nICsgc3RhcnQgKyAnIC0gJyArIGVuZCArICc8L2Rpdj4nKTsKICAgICAgfQogICAgICAKICAgICAgaWYgKG1heExlbiA+IDEwKSB7CiAgICAgICAgc2Vzc2lvbnMucHVzaCgnPGRpdiBjbGFzcz0iZW50cnkgZW1wdHkiPi4uLmFuZCAnICsgKG1heExlbiAtIDEwKSArICcgbW9yZTwvZGl2PicpOwogICAgICB9CiAgICAgIGNvbnRhaW5lci5pbm5lckhUTUwgPSBzZXNzaW9ucy5qb2luKCcnKTsKICAgIH0KICAgIAogICAgZnVuY3Rpb24gbG9hZERhdGEoKSB7CiAgICAgIHRyeSB7CiAgICAgICAgdmFyIGhhc2ggPSB3aW5kb3cubG9jYXRpb24uaGFzaC5zdWJzdHJpbmcoMSk7CiAgICAgICAgaWYgKGhhc2gpIHsKICAgICAgICAgIHZhciBkYXRhID0gSlNPTi5wYXJzZShkZWNvZGVVUklDb21wb25lbnQoaGFzaCkpOwogICAgICAgICAgdmFyIGJvdHRsZXMgPSBkYXRhW1BFUlNJU1RfQk9UVExFXSA/IEpTT04ucGFyc2UoZGF0YVtQRVJTSVNUX0JPVFRMRV0pIDogW107CiAgICAgICAgICB2YXIgZGlhcGVycyA9IGRhdGFbUEVSU0lTVF9ESUFQRVJdID8gSlNPTi5wYXJzZShkYXRhW1BFUlNJU1RfRElBUEVSXSkgOiBbXTsKICAgICAgICAgIHZhciBtb29uU3RhcnRzID0gZGF0YVtQRVJTSVNUX01PT05fU1RBUlRdID8gSlNPTi5wYXJzZShkYXRhW1BFUlNJU1RfTU9PTl9TVEFSVF0pIDogW107CiAgICAgICAgICB2YXIgbW9vbkVuZHMgPSBkYXRhW1BFUlNJU1RfTU9PTl9FTkRdID8gSlNPTi5wYXJzZShkYXRhW1BFUlNJU1RfTU9PTl9FTkRdKSA6IFtdOwogICAgICAgICAgCiAgICAgICAgICByZW5kZXJFbnRyaWVzKGJvdHRsZXMsICdib3R0bGUtZW50cmllcycsICdib3R0bGUtY291bnQnKTsKICAgICAgICAgIHJlbmRlckVudHJpZXMoZGlhcGVycywgJ2RpYXBlci1lbnRyaWVzJywgJ2RpYXBlci1jb3VudCcpOwogICAgICAgICAgcmVuZGVyU2xlZXAobW9vblN0YXJ0cywgbW9vbkVuZHMpOwogICAgICAgIH0KICAgICAgfSBjYXRjaCAoZSkgewogICAgICAgIGNvbnNvbGUubG9nKCdFcnJvciBwYXJzaW5nIGRhdGE6JywgZSk7CiAgICAgIH0KICAgIH0KICAgIAogICAgZnVuY3Rpb24gY2xvc2VTZXR0aW5ncygpIHsKICAgICAgZG9jdW1lbnQubG9jYXRpb24gPSAncGViYmxlanM6Ly9jbG9zZSMnOwogICAgfQogICAgCiAgICBmdW5jdGlvbiByZXNldERhdGEoKSB7CiAgICAgIGlmIChjb25maXJtKCdBcmUgeW91IHN1cmUgeW91IHdhbnQgdG8gcmVzZXQgYWxsIEJhYnkgV2F0Y2ggZGF0YT8gVGhpcyBjYW5ub3QgYmUgdW5kb25lLicpKSB7CiAgICAgICAgZG9jdW1lbnQubG9jYXRpb24gPSAncGViYmxlanM6Ly9jbG9zZSNyZXNldCc7CiAgICAgIH0KICAgIH0KICAgIAogICAgbG9hZERhdGEoKTsKICA8L3NjcmlwdD4KPC9ib2R5Pgo8L2h0bWw+Cg==';
+// Settings page hosted on GitHub Pages
+// To enable: Go to repo Settings > Pages > Source: Deploy from branch > main > / (root)
+var SETTINGS_PAGE = 'https://saintyoga-cyber.github.io/Baby-Watch-Reborn/settings.html';
 
 Pebble.addEventListener("ready",
 function(e) {
-console.log("Pebby JavaScript ready!");
-
-if (typeof window.localStorage[PERSIST_BOTTLE] === 'undefined' || window.localStorage[PERSIST_BOTTLE] === null) {
-console.log('LocalStorage is empty, initting');
-// Init values, first time only
-memoryArray[PERSIST_BOTTLE] = [];
-memoryArray[PERSIST_DIAPER] = [];
-memoryArray[PERSIST_MOON_START] = [];
-memoryArray[PERSIST_MOON_END] = [];
-window.localStorage[PERSIST_BOTTLE] = JSON.stringify(memoryArray[PERSIST_BOTTLE]);
-window.localStorage[PERSIST_DIAPER] = JSON.stringify(memoryArray[PERSIST_DIAPER]);
-window.localStorage[PERSIST_MOON_START] = JSON.stringify(memoryArray[PERSIST_MOON_START]);
-window.localStorage[PERSIST_MOON_END] = JSON.stringify(memoryArray[PERSIST_MOON_END]);
-} else {
-console.log('LocalStorage not empty, loading');
-memoryArray[PERSIST_BOTTLE] = JSON.parse(window.localStorage[PERSIST_BOTTLE]);
-memoryArray[PERSIST_DIAPER] = JSON.parse(window.localStorage[PERSIST_DIAPER]);
-memoryArray[PERSIST_MOON_START] = JSON.parse(window.localStorage[PERSIST_MOON_START]);
-memoryArray[PERSIST_MOON_END] = JSON.parse(window.localStorage[PERSIST_MOON_END]);
-}
+  console.log("Baby Watch Reborn JS Ready!");
+  memoryArray[PERSIST_BOTTLE] = [];
+  memoryArray[PERSIST_DIAPER] = [];
+  memoryArray[PERSIST_MOON_START] = [];
+  memoryArray[PERSIST_MOON_END] = [];
+  
+  if (typeof(window.localStorage[PERSIST_BOTTLE]) !== 'undefined') {
+    memoryArray[PERSIST_BOTTLE] = JSON.parse(window.localStorage[PERSIST_BOTTLE]);
+  }
+  if (typeof(window.localStorage[PERSIST_DIAPER]) !== 'undefined') {
+    memoryArray[PERSIST_DIAPER] = JSON.parse(window.localStorage[PERSIST_DIAPER]);
+  }
+  if (typeof(window.localStorage[PERSIST_MOON_START]) !== 'undefined') {
+    memoryArray[PERSIST_MOON_START] = JSON.parse(window.localStorage[PERSIST_MOON_START]);
+  }
+  if (typeof(window.localStorage[PERSIST_MOON_END]) !== 'undefined') {
+    memoryArray[PERSIST_MOON_END] = JSON.parse(window.localStorage[PERSIST_MOON_END]);
+  }
 }
 );
 
 Pebble.addEventListener("appmessage",
 function(e) {
-console.log("Received message: " + JSON.stringify(e.payload));
-var updated = [];
-for (var v in e.payload) {
-if (memoryArray[v].indexOf(e.payload[v]) == -1) {
-if (updated.indexOf(v) == -1) {
-updated.push(v);
-}
-memoryArray[v].push(e.payload[v]);
-}
-}
+  console.log("AppMessage received: " + JSON.stringify(e.payload));
+  var updated = [];
+  for (var v in e.payload) {
+    if (e.payload.hasOwnProperty(v)) {
+      v = parseInt(v, 10);
+      if (typeof(memoryArray[v]) === 'undefined') {
+        memoryArray[v] = [];
+      }
+      if (updated.indexOf(v) == -1) {
+        updated.push(v);
+      }
+      memoryArray[v].push(e.payload[v]);
+    }
+  }
 
-for (var i = 0; i < updated.length; ++i) {
-console.log("Updating localStorage[" + updated[i] + "], new value: " + JSON.stringify(memoryArray[updated[i]]));
-window.localStorage[updated[i]] = JSON.stringify(memoryArray[updated[i]]);
-}
+  for (var i = 0; i < updated.length; ++i) {
+    console.log("Updating localStorage[" + updated[i] + "], new value: " + JSON.stringify(memoryArray[updated[i]]));
+    window.localStorage[updated[i]] = JSON.stringify(memoryArray[updated[i]]);
+  }
 }
 );
 
 Pebble.addEventListener("showConfiguration",
 function(e) {
-var qData = {};
-qData[PERSIST_BOTTLE] = window.localStorage[PERSIST_BOTTLE];
-qData[PERSIST_DIAPER] = window.localStorage[PERSIST_DIAPER];
-qData[PERSIST_MOON_START] = window.localStorage[PERSIST_MOON_START];
-qData[PERSIST_MOON_END] = window.localStorage[PERSIST_MOON_END];
-console.log('qData: ' + JSON.stringify(qData));
-// Use embedded settings page with data in hash
-var url = SETTINGS_PAGE + '#' + encodeURIComponent(JSON.stringify(qData));
-console.log('Opening embedded settings page');
-Pebble.openURL(url);
+  var qData = {};
+  qData[PERSIST_BOTTLE] = window.localStorage[PERSIST_BOTTLE];
+  qData[PERSIST_DIAPER] = window.localStorage[PERSIST_DIAPER];
+  qData[PERSIST_MOON_START] = window.localStorage[PERSIST_MOON_START];
+  qData[PERSIST_MOON_END] = window.localStorage[PERSIST_MOON_END];
+  console.log('qData: ' + JSON.stringify(qData));
+  // Use settings page hosted on GitHub Pages with data in hash
+  var url = SETTINGS_PAGE + '#' + encodeURIComponent(JSON.stringify(qData));
+  console.log('Opening settings page: ' + url);
+  Pebble.openURL(url);
 }
 );
 
 Pebble.addEventListener("webviewclosed",
 function(e) {
-console.log("Configuration window returned: " + e.response);
-if (e.response == "reset") {
-console.log("Local Storage cleared");
-for (var v in window.localStorage) {
-window.localStorage.removeItem(v);
-}
-window.localStorage.clear();
-Pebble.sendAppMessage({"0": "reset" });
-memoryArray[PERSIST_BOTTLE] = [];
-memoryArray[PERSIST_DIAPER] = [];
-memoryArray[PERSIST_MOON_START] = [];
-memoryArray[PERSIST_MOON_END] = [];
-window.localStorage[PERSIST_BOTTLE] = JSON.stringify(memoryArray[PERSIST_BOTTLE]);
-window.localStorage[PERSIST_DIAPER] = JSON.stringify(memoryArray[PERSIST_DIAPER]);
-window.localStorage[PERSIST_MOON_START] = JSON.stringify(memoryArray[PERSIST_MOON_START]);
-window.localStorage[PERSIST_MOON_END] = JSON.stringify(memoryArray[PERSIST_MOON_END]);
-}
+  console.log("Configuration window returned: " + e.response);
+  if (e.response == "reset") {
+    console.log("Local Storage cleared");
+    for (var v in window.localStorage) {
+      window.localStorage.removeItem(v);
+    }
+    window.localStorage.clear();
+    Pebble.sendAppMessage({"0": "reset" });
+    memoryArray[PERSIST_BOTTLE] = [];
+    memoryArray[PERSIST_DIAPER] = [];
+    memoryArray[PERSIST_MOON_START] = [];
+    memoryArray[PERSIST_MOON_END] = [];
+    window.localStorage[PERSIST_BOTTLE] = JSON.stringify(memoryArray[PERSIST_BOTTLE]);
+    window.localStorage[PERSIST_DIAPER] = JSON.stringify(memoryArray[PERSIST_DIAPER]);
+    window.localStorage[PERSIST_MOON_START] = JSON.stringify(memoryArray[PERSIST_MOON_START]);
+    window.localStorage[PERSIST_MOON_END] = JSON.stringify(memoryArray[PERSIST_MOON_END]);
+  }
 }
 );
-

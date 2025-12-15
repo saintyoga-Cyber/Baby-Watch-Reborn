@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baby Watch Reborn Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 400px; margin: 0 auto; }
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      margin-bottom: 24px;
+      color: #00aaff;
+    }
+    .section {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .icon { font-size: 20px; }
+    .count {
+      background: #00aaff;
+      color: #000;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .entries {
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .entry {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .entry:last-child { border-bottom: none; }
+    .empty { font-style: italic; opacity: 0.5; }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-reset {
+      background: #ff4757;
+      color: #fff;
+    }
+    .btn-close {
+      background: #00aaff;
+      color: #000;
+    }
+    .warning {
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Baby Watch Reborn</h1>
+    
+    <div class="section">
+      <div class="section-title">
+        <span class="icon">B</span> Feedings <span class="count" id="bottle-count">0</span>
+      </div>
+      <div class="entries" id="bottle-entries">
+        <div class="empty">No entries yet</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">
+        <span class="icon">D</span> Diaper Changes <span class="count" id="diaper-count">0</span>
+      </div>
+      <div class="entries" id="diaper-entries">
+        <div class="empty">No entries yet</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">
+        <span class="icon">S</span> Sleep Sessions <span class="count" id="sleep-count">0</span>
+      </div>
+      <div class="entries" id="sleep-entries">
+        <div class="empty">No entries yet</div>
+      </div>
+    </div>
+    
+    <button class="btn btn-close" onclick="closeSettings()">Done</button>
+    <button class="btn btn-reset" onclick="resetData()">Reset All Data</button>
+    <p class="warning">Reset will clear all tracked data from your watch</p>
+  </div>
+  
+  <script>
+    var PERSIST_BOTTLE = 1;
+    var PERSIST_DIAPER = 2;
+    var PERSIST_MOON_START = 3;
+    var PERSIST_MOON_END = 4;
+    
+    function formatTime(timestamp) {
+      var d = new Date(timestamp * 1000);
+      var now = new Date();
+      var isToday = d.toDateString() === now.toDateString();
+      var yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      var isYesterday = d.toDateString() === yesterday.toDateString();
+      
+      var timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      
+      if (isToday) return 'Today ' + timeStr;
+      if (isYesterday) return 'Yesterday ' + timeStr;
+      return d.toLocaleDateString() + ' ' + timeStr;
+    }
+    
+    function renderEntries(entries, elementId, countId) {
+      var container = document.getElementById(elementId);
+      var countEl = document.getElementById(countId);
+      
+      if (!entries || entries.length === 0) {
+        countEl.textContent = '0';
+        container.innerHTML = '<div class="empty">No entries yet</div>';
+        return;
+      }
+      
+      countEl.textContent = entries.length;
+      var html = '';
+      var displayEntries = entries.slice(-10).reverse();
+      
+      for (var i = 0; i < displayEntries.length; i++) {
+        html += '<div class="entry">' + formatTime(displayEntries[i]) + '</div>';
+      }
+      
+      if (entries.length > 10) {
+        html += '<div class="entry empty">...and ' + (entries.length - 10) + ' more</div>';
+      }
+      container.innerHTML = html;
+    }
+    
+    function renderSleep(starts, ends) {
+      var container = document.getElementById('sleep-entries');
+      var countEl = document.getElementById('sleep-count');
+      
+      if ((!starts || starts.length === 0) && (!ends || ends.length === 0)) {
+        countEl.textContent = '0';
+        container.innerHTML = '<div class="empty">No entries yet</div>';
+        return;
+      }
+      
+      var sessions = [];
+      var maxLen = Math.max(starts ? starts.length : 0, ends ? ends.length : 0);
+      countEl.textContent = maxLen;
+      
+      for (var i = 0; i < Math.min(maxLen, 10); i++) {
+        var start = starts && starts[i] ? formatTime(starts[i]) : '?';
+        var end = ends && ends[i] ? formatTime(ends[i]) : 'ongoing';
+        sessions.push('<div class="entry">' + start + ' - ' + end + '</div>');
+      }
+      
+      if (maxLen > 10) {
+        sessions.push('<div class="entry empty">...and ' + (maxLen - 10) + ' more</div>');
+      }
+      container.innerHTML = sessions.join('');
+    }
+    
+    function loadData() {
+      try {
+        var hash = window.location.hash.substring(1);
+        if (hash) {
+          var data = JSON.parse(decodeURIComponent(hash));
+          var bottles = data[PERSIST_BOTTLE] ? JSON.parse(data[PERSIST_BOTTLE]) : [];
+          var diapers = data[PERSIST_DIAPER] ? JSON.parse(data[PERSIST_DIAPER]) : [];
+          var moonStarts = data[PERSIST_MOON_START] ? JSON.parse(data[PERSIST_MOON_START]) : [];
+          var moonEnds = data[PERSIST_MOON_END] ? JSON.parse(data[PERSIST_MOON_END]) : [];
+          
+          renderEntries(bottles, 'bottle-entries', 'bottle-count');
+          renderEntries(diapers, 'diaper-entries', 'diaper-count');
+          renderSleep(moonStarts, moonEnds);
+        }
+      } catch (e) {
+        console.log('Error parsing data:', e);
+      }
+    }
+    
+    function closeSettings() {
+      document.location = 'pebblejs://close#';
+    }
+    
+    function resetData() {
+      if (confirm('Are you sure you want to reset all Baby Watch data? This cannot be undone.')) {
+        document.location = 'pebblejs://close#reset';
+      }
+    }
+    
+    loadData();
+  </script>
+</body>
+</html>

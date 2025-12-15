@@ -6,8 +6,7 @@ var PERSIST_MOON_END = 4;
 
 var memoryArray = {};
 
-// Settings page hosted on GitHub Pages
-// To enable: Go to repo Settings > Pages > Source: Deploy from branch > main > / (root)
+// Settings page hosted on GitHub Pages - simple URL without hash data
 var SETTINGS_PAGE = 'https://saintyoga-cyber.github.io/Baby-Watch-Reborn/settings.html';
 
 Pebble.addEventListener("ready",
@@ -59,16 +58,8 @@ function(e) {
 
 Pebble.addEventListener("showConfiguration",
 function(e) {
-  var qData = {};
-  qData[PERSIST_BOTTLE] = window.localStorage[PERSIST_BOTTLE];
-  qData[PERSIST_DIAPER] = window.localStorage[PERSIST_DIAPER];
-  qData[PERSIST_MOON_START] = window.localStorage[PERSIST_MOON_START];
-  qData[PERSIST_MOON_END] = window.localStorage[PERSIST_MOON_END];
-  console.log('qData: ' + JSON.stringify(qData));
-  // Use settings page hosted on GitHub Pages with data in hash
-  var url = SETTINGS_PAGE + '#' + encodeURIComponent(JSON.stringify(qData));
-  console.log('Opening settings page: ' + url);
-  Pebble.openURL(url);
+  console.log("Opening settings page: " + SETTINGS_PAGE);
+  Pebble.openURL(SETTINGS_PAGE);
 }
 );
 

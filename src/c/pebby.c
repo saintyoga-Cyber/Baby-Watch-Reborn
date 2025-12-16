@@ -14,6 +14,12 @@
 #define PERSIST_MOON_START 3
 #define PERSIST_MOON_END 4
 
+/***** Timeline Event Types *****/
+#define EVENT_BOTTLE 1
+#define EVENT_DIAPER 2
+#define EVENT_SLEEP_START 3
+#define EVENT_SLEEP_END 4
+
 
 /***** Variables *****/
 
@@ -153,11 +159,21 @@ void sendToPhone(int key, time_t message) {
   app_message_outbox_send();
 }
 
+void sendTimelineEvent(int eventType, time_t timestamp) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_TYPE, eventType);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_TIME, (int32_t)timestamp);
+  app_message_outbox_send();
+  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld", eventType, timestamp);
+}
+
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
   ButtonId bt = click_recognizer_get_button_id(recognizer);
   char *targetText = timeTextUp;
   TextLayer *targetLayer = bottleTextLayer;
   int persistKey = PERSIST_BOTTLE;
+  int eventType = EVENT_BOTTLE;
 
   time_t t = time(NULL);
 
@@ -165,6 +181,7 @@ void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
     targetText = timeTextMiddle;
     targetLayer = diaperTextLayer;
     persistKey = PERSIST_DIAPER;
+    eventType = EVENT_DIAPER;
     diaperStart = t;
     setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
   } else {
@@ -176,7 +193,7 @@ void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
 
   persist_write_int(persistKey, t);
 
-  sendToPhone(persistKey, t);
+  sendTimelineEvent(eventType, t);
 }
 
 void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -190,14 +207,14 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
     persist_write_int(PERSIST_MOON_START, sleepStart);
     persist_write_int(PERSIST_MOON_END, 0);
 
-    sendToPhone(PERSIST_MOON_START, t);
+    sendTimelineEvent(EVENT_SLEEP_START, t);
   } else {
     sleeping = 0;
     sleepEnd = t;
 
     persist_write_int(PERSIST_MOON_END, sleepEnd);
 
-    sendToPhone(PERSIST_MOON_END, t);
+    sendTimelineEvent(EVENT_SLEEP_END, t);
   }
 
   setTimeRangeText(sleepStart, sleepEnd, timeTextDown, moonTextLayer);

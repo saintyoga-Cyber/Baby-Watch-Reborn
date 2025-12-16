@@ -20,6 +20,7 @@
     ],
     "resources": {
       "media": [
+        {"type": "png", "name": "IMAGE_MENU_ICON", "file": "images/icon.png", "menuIcon": true},
         {"type": "png", "name": "ACTION_MOON", "file": "images/moonaction.png"},
         {"type": "png", "name": "ACTION_DIAPER", "file": "images/diaperaction.png"},
         {"type": "png", "name": "ACTION_BOTTLE", "file": "images/bottleaction.png"},

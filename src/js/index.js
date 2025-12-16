@@ -10,7 +10,7 @@ var EVENT_SLEEP_END = 4;
 var KEY_EVENT_TYPE = 0;
 var KEY_EVENT_TIME = 1;
 
-// Icon mapping for different events
+// Icon and config mapping for different events
 var eventConfig = {
   1: { name: 'Bottle Feed', icon: 'system://images/DINNER_RESERVATION' },
   2: { name: 'Diaper Change', icon: 'system://images/SCHEDULED_EVENT' },
@@ -37,17 +37,27 @@ function createEventPin(eventType, timestamp) {
   }
   
   var date = new Date(timestamp * 1000);
+  var isoTime = date.toISOString();
   var pinId = 'baby-watch-' + eventType + '-' + timestamp;
   
+  // Pin structure based on Bobby assistant (which works with Rebble)
   var pin = {
-    'id': pinId,
-    'time': date.toISOString(),
-    'layout': {
-      'type': 'genericPin',
-      'title': config.name,
-      'body': 'Logged at ' + formatTime(timestamp),
-      'tinyIcon': config.icon
-    }
+    "id": pinId,
+    "time": isoTime,
+    "layout": {
+      "type": "genericPin",
+      "title": config.name,
+      "body": "Logged at " + formatTime(timestamp),
+      "tinyIcon": config.icon
+    },
+    "reminders": [{
+      "time": isoTime,
+      "layout": {
+        "type": "genericReminder",
+        "title": config.name,
+        "tinyIcon": config.icon
+      }
+    }]
   };
   
   return pin;
@@ -66,11 +76,9 @@ function pushTimelinePin(eventType, timestamp) {
 
 // Helper to get value from payload - tries both string name and numeric index
 function getPayloadValue(payload, stringKey, numericKey) {
-  // Try string key first (SDK 3 with enableMultiJS)
   if (payload[stringKey] !== undefined) {
     return payload[stringKey];
   }
-  // Try numeric key (fallback)
   if (payload[numericKey] !== undefined) {
     return payload[numericKey];
   }
@@ -79,33 +87,27 @@ function getPayloadValue(payload, stringKey, numericKey) {
 
 Pebble.addEventListener('ready', function() {
   console.log('=== BABY WATCH JS READY ===');
-  console.log('Timeline support: Rebble API');
+  console.log('Timeline: Rebble API');
   
-  // Test timeline token on startup
   Pebble.getTimelineToken(function(token) {
     console.log('Timeline token OK: ' + token.substring(0, 15) + '...');
   }, function(error) {
     console.log('Timeline token FAILED: ' + error);
-    console.log('Make sure your watch is connected to Rebble services!');
   });
 });
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log('=== APPMESSAGE RECEIVED ===');
-  console.log('Raw payload: ' + JSON.stringify(e.payload));
+  console.log('Payload: ' + JSON.stringify(e.payload));
   
-  // Try both string keys and numeric keys
   var eventType = getPayloadValue(e.payload, 'EVENT_TYPE', KEY_EVENT_TYPE);
   var timestamp = getPayloadValue(e.payload, 'EVENT_TIME', KEY_EVENT_TIME);
   
-  console.log('eventType: ' + eventType + ' (type: ' + typeof eventType + ')');
-  console.log('timestamp: ' + timestamp + ' (type: ' + typeof timestamp + ')');
+  console.log('eventType=' + eventType + ', timestamp=' + timestamp);
   
   if (eventType !== undefined && timestamp !== undefined) {
-    console.log('Creating timeline pin...');
     pushTimelinePin(eventType, timestamp);
   } else {
-    console.log('ERROR: Missing eventType or timestamp');
-    console.log('Available keys: ' + Object.keys(e.payload).join(', '));
+    console.log('ERROR: Missing data. Keys: ' + Object.keys(e.payload).join(', '));
   }
 });

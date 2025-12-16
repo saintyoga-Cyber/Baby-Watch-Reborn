@@ -62,15 +62,29 @@ function pushTimelinePin(eventType, timestamp) {
 
 Pebble.addEventListener('ready', function() {
   console.log('PebbleKit JS ready! Timeline support enabled.');
+  console.log('Testing timeline token acquisition...');
+  Pebble.getTimelineToken(function(token) {
+    console.log('Timeline token acquired successfully: ' + token.substring(0, 20) + '...');
+  }, function(error) {
+    console.log('ERROR: Failed to get timeline token: ' + error);
+  });
 });
 
 Pebble.addEventListener('appmessage', function(e) {
-  console.log('Received appmessage: ' + JSON.stringify(e.payload));
+  console.log('=== APPMESSAGE RECEIVED ===');
+  console.log('Raw payload: ' + JSON.stringify(e.payload));
+  console.log('Payload keys: ' + Object.keys(e.payload).join(', '));
   
   var eventType = e.payload['EVENT_TYPE'];
   var timestamp = e.payload['EVENT_TIME'];
   
+  console.log('Parsed eventType: ' + eventType + ' (type: ' + typeof eventType + ')');
+  console.log('Parsed timestamp: ' + timestamp + ' (type: ' + typeof timestamp + ')');
+  
   if (eventType && timestamp) {
+    console.log('Valid event, pushing timeline pin...');
     pushTimelinePin(eventType, timestamp);
+  } else {
+    console.log('WARNING: Missing eventType or timestamp, cannot create pin');
   }
 });

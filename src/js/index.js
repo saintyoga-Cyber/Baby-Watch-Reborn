@@ -6,6 +6,10 @@ var EVENT_DIAPER = 2;
 var EVENT_SLEEP_START = 3;
 var EVENT_SLEEP_END = 4;
 
+// Message key indices (as defined in package.json messageKeys array order)
+var KEY_EVENT_TYPE = 0;
+var KEY_EVENT_TIME = 1;
+
 // Icon mapping for different events
 var eventConfig = {
   1: { name: 'Bottle Feed', icon: 'system://images/DINNER_RESERVATION' },
@@ -60,31 +64,48 @@ function pushTimelinePin(eventType, timestamp) {
   });
 }
 
+// Helper to get value from payload - tries both string name and numeric index
+function getPayloadValue(payload, stringKey, numericKey) {
+  // Try string key first (SDK 3 with enableMultiJS)
+  if (payload[stringKey] !== undefined) {
+    return payload[stringKey];
+  }
+  // Try numeric key (fallback)
+  if (payload[numericKey] !== undefined) {
+    return payload[numericKey];
+  }
+  return undefined;
+}
+
 Pebble.addEventListener('ready', function() {
-  console.log('PebbleKit JS ready! Timeline support enabled.');
-  console.log('Testing timeline token acquisition...');
+  console.log('=== BABY WATCH JS READY ===');
+  console.log('Timeline support: Rebble API');
+  
+  // Test timeline token on startup
   Pebble.getTimelineToken(function(token) {
-    console.log('Timeline token acquired successfully: ' + token.substring(0, 20) + '...');
+    console.log('Timeline token OK: ' + token.substring(0, 15) + '...');
   }, function(error) {
-    console.log('ERROR: Failed to get timeline token: ' + error);
+    console.log('Timeline token FAILED: ' + error);
+    console.log('Make sure your watch is connected to Rebble services!');
   });
 });
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log('=== APPMESSAGE RECEIVED ===');
   console.log('Raw payload: ' + JSON.stringify(e.payload));
-  console.log('Payload keys: ' + Object.keys(e.payload).join(', '));
   
-  var eventType = e.payload['EVENT_TYPE'];
-  var timestamp = e.payload['EVENT_TIME'];
+  // Try both string keys and numeric keys
+  var eventType = getPayloadValue(e.payload, 'EVENT_TYPE', KEY_EVENT_TYPE);
+  var timestamp = getPayloadValue(e.payload, 'EVENT_TIME', KEY_EVENT_TIME);
   
-  console.log('Parsed eventType: ' + eventType + ' (type: ' + typeof eventType + ')');
-  console.log('Parsed timestamp: ' + timestamp + ' (type: ' + typeof timestamp + ')');
+  console.log('eventType: ' + eventType + ' (type: ' + typeof eventType + ')');
+  console.log('timestamp: ' + timestamp + ' (type: ' + typeof timestamp + ')');
   
-  if (eventType && timestamp) {
-    console.log('Valid event, pushing timeline pin...');
+  if (eventType !== undefined && timestamp !== undefined) {
+    console.log('Creating timeline pin...');
     pushTimelinePin(eventType, timestamp);
   } else {
-    console.log('WARNING: Missing eventType or timestamp, cannot create pin');
+    console.log('ERROR: Missing eventType or timestamp');
+    console.log('Available keys: ' + Object.keys(e.payload).join(', '));
   }
 });

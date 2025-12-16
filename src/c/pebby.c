@@ -29,19 +29,19 @@ static Layer *moonBgLayer;
 // Texts
 
 static TextLayer *bottleTextLayer;
-static char timeTextUp[] = "00:00";// Used by the system later
+static char timeTextUp[] = "00:00";
 static TextLayer *bottleSinceTextLayer;
-static char timeSinceTextUp[] = "(99 minutes ago)";// Used by the system later
+static char timeSinceTextUp[] = "(99 minutes ago)";
 
 static TextLayer *diaperTextLayer;
-static char timeTextMiddle[] = "00:00";// Used by the system later
+static char timeTextMiddle[] = "00:00";
 static TextLayer *diaperSinceTextLayer;
-static char timeSinceTextMiddle[] = "(99 minutes ago)";// Used by the system later
+static char timeSinceTextMiddle[] = "(99 minutes ago)";
 
 static TextLayer *moonTextLayer;
-static char timeTextDown[14] = "";// Used by the system later
+static char timeTextDown[14] = "";
 static TextLayer *moonSinceTextLayer;
-static char timeSinceTextDown[] = "(99 minutes ago)";// Used by the system later
+static char timeSinceTextDown[] = "(99 minutes ago)";
 
 // Action Bar
 
@@ -146,7 +146,6 @@ static void setTimeRangeText(time_t startTimestamp, time_t endTimestamp, char *t
 /***** Click Provider *****/
 
 void sendToPhone(int key, time_t message) {
-  // Send value to phone
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   Tuplet value = TupletInteger(key, message);
@@ -289,8 +288,8 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(window_layer);
   bounds.size.h -= 6;
 
-  int rowHeight = bounds.size.h / 3;
   int contentWidth = bounds.size.w - ACTION_BAR_WIDTH;
+  int rowHeight = bounds.size.h / 3;
 
   // Create colored background layers (only on color devices)
   #ifdef PBL_COLOR
@@ -302,26 +301,14 @@ static void window_load(Window *window) {
   layer_set_update_proc(diaperBgLayer, diaper_bg_update_proc);
   layer_add_child(window_layer, diaperBgLayer);
 
-  moonBgLayer = layer_create((GRect){ .origin = {0, rowHeight * 2}, .size = {contentWidth, rowHeight} });
+  moonBgLayer = layer_create((GRect){ .origin = {0, rowHeight * 2}, .size = {contentWidth, rowHeight + 6} });
   layer_set_update_proc(moonBgLayer, moon_bg_update_proc);
   layer_add_child(window_layer, moonBgLayer);
   #endif
 
-  // Text layers - positioned in the center of each row
-  int textYOffset = (rowHeight - 44) / 2;  // 44 = 24 + 20 for two text lines
+  // Text layers - using original positioning from Pebby
 
-  // Bottle row
-  bottleTextLayer = text_layer_create((GRect){ .origin = {0, textYOffset}, .size = {contentWidth, 24} });
-  text_layer_set_text_alignment(bottleTextLayer, GTextAlignmentCenter);
-  text_layer_set_text(bottleTextLayer, "");
-  text_layer_set_font(bottleTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  #ifdef PBL_COLOR
-  text_layer_set_background_color(bottleTextLayer, GColorClear);
-  text_layer_set_text_color(bottleTextLayer, GColorBlack);
-  #endif
-  layer_add_child(window_layer, text_layer_get_layer(bottleTextLayer));
-
-  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {0, textYOffset + 24}, .size = {contentWidth, 20} });
+  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
   text_layer_set_text_alignment(bottleSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(bottleSinceTextLayer, "");
   text_layer_set_font(bottleSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
@@ -331,47 +318,57 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(bottleSinceTextLayer));
 
-  // Diaper row
-  diaperTextLayer = text_layer_create((GRect){ .origin = {0, rowHeight + textYOffset}, .size = {contentWidth, 24} });
-  text_layer_set_text_alignment(diaperTextLayer, GTextAlignmentCenter);
-  text_layer_set_text(diaperTextLayer, "");
-  text_layer_set_font(diaperTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  #ifdef PBL_COLOR
-  text_layer_set_background_color(diaperTextLayer, GColorClear);
-  text_layer_set_text_color(diaperTextLayer, GColorBlack);
-  #endif
-  layer_add_child(window_layer, text_layer_get_layer(diaperTextLayer));
-
-  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {0, rowHeight + textYOffset + 24}, .size = {contentWidth, 20} });
+  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 + 2 }, .size = {contentWidth, 24} });
+  text_layer_set_font(diaperSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(diaperSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(diaperSinceTextLayer, "");
-  text_layer_set_font(diaperSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   #ifdef PBL_COLOR
   text_layer_set_background_color(diaperSinceTextLayer, GColorClear);
   text_layer_set_text_color(diaperSinceTextLayer, GColorBlack);
   #endif
   layer_add_child(window_layer, text_layer_get_layer(diaperSinceTextLayer));
 
-  // Moon/Sleep row
-  moonTextLayer = text_layer_create((GRect){ .origin = {0, rowHeight * 2 + textYOffset}, .size = {contentWidth, 24} });
+  moonSinceTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
+  text_layer_set_font(moonSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+  text_layer_set_text_alignment(moonSinceTextLayer, GTextAlignmentCenter);
+  text_layer_set_text(moonSinceTextLayer, "");
+  #ifdef PBL_COLOR
+  text_layer_set_background_color(moonSinceTextLayer, GColorClear);
+  text_layer_set_text_color(moonSinceTextLayer, GColorBlack);
+  #endif
+  layer_add_child(window_layer, text_layer_get_layer(moonSinceTextLayer));
+
+
+  bottleTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
+  text_layer_set_text_alignment(bottleTextLayer, GTextAlignmentCenter);
+  text_layer_set_text(bottleTextLayer, "");
+  text_layer_set_font(bottleTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  #ifdef PBL_COLOR
+  text_layer_set_background_color(bottleTextLayer, GColorClear);
+  text_layer_set_text_color(bottleTextLayer, GColorBlack);
+  #endif
+  layer_add_child(window_layer, text_layer_get_layer(bottleTextLayer));
+
+  diaperTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 - 20 }, .size = {contentWidth, 24} });
+  text_layer_set_font(diaperTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  text_layer_set_text_alignment(diaperTextLayer, GTextAlignmentCenter);
+  text_layer_set_text(diaperTextLayer, "");
+  #ifdef PBL_COLOR
+  text_layer_set_background_color(diaperTextLayer, GColorClear);
+  text_layer_set_text_color(diaperTextLayer, GColorBlack);
+  #endif
+  layer_add_child(window_layer, text_layer_get_layer(diaperTextLayer));
+
+  moonTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
+  text_layer_set_font(moonTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   text_layer_set_text_alignment(moonTextLayer, GTextAlignmentCenter);
   text_layer_set_text(moonTextLayer, "");
-  text_layer_set_font(moonTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   #ifdef PBL_COLOR
   text_layer_set_background_color(moonTextLayer, GColorClear);
   text_layer_set_text_color(moonTextLayer, GColorBlack);
   #endif
   layer_add_child(window_layer, text_layer_get_layer(moonTextLayer));
 
-  moonSinceTextLayer = text_layer_create((GRect){ .origin = {0, rowHeight * 2 + textYOffset + 24}, .size = {contentWidth, 20} });
-  text_layer_set_text_alignment(moonSinceTextLayer, GTextAlignmentCenter);
-  text_layer_set_text(moonSinceTextLayer, "");
-  text_layer_set_font(moonSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-  #ifdef PBL_COLOR
-  text_layer_set_background_color(moonSinceTextLayer, GColorClear);
-  text_layer_set_text_color(moonSinceTextLayer, GColorBlack);
-  #endif
-  layer_add_child(window_layer, text_layer_get_layer(moonSinceTextLayer));
 
   // Time values initialization
   if (persist_exists(PERSIST_BOTTLE)) {
@@ -388,6 +385,7 @@ static void window_load(Window *window) {
 
   if (persist_exists(PERSIST_MOON_START)) {
     sleepStart = persist_read_int(PERSIST_MOON_START);
+
     sleepEnd = persist_exists(PERSIST_MOON_END)? persist_read_int(PERSIST_MOON_END) : 0;
 
     if (sleepEnd == 0 && sleepStart != 0) {

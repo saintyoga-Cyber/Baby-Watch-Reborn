@@ -7,7 +7,7 @@
   "dependencies": {},
   "pebble": {
     "displayName": "Baby Watch Reborn",
-    "uuid": "2a2e6d45-7240-4706-933a-3b521cf17490",
+    "uuid": "7ee73a8d-fdd7-4ba2-88ef-7e1d34762447",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],

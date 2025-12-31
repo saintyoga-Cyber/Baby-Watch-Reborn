@@ -1,7 +1,7 @@
 {
   "name": "baby-watch-reborn",
   "author": "saintyoga-Cyber",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
@@ -14,7 +14,7 @@
     "watchapp": {
       "watchface": false
     },
-    "capabilities": ["configurable"],
+    "capabilities": ["configurable", "timeline"],
     "messageKeys": [
       "EVENT_TYPE",
       "EVENT_TIME"
@@ -28,6 +28,9 @@
         {"type": "png-trans", "name": "IMAGE_DIAPER", "file": "images/diaper.png"},
         {"type": "png-trans", "name": "IMAGE_BOTTLE", "file": "images/bottle.png"}
       ]
+    },
+    "js": {
+      "main": "src/js/index.js"
     }
   }
 }

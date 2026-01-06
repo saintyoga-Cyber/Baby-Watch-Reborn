@@ -1,13 +1,13 @@
 {
   "name": "baby-watch-reborn",
   "author": "saintyoga-Cyber",
-  "version": "1.1",
+  "version": "1.2",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
   "pebble": {
     "displayName": "Baby Watch Reborn",
-    "uuid": "7ee73a8d-fdd7-4ba2-88ef-7e1d34762447",
+    "uuid": "3bbfd550-0764-439b-bc65-43d310de47ef",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],

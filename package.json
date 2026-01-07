@@ -28,9 +28,6 @@
         {"type": "png-trans", "name": "IMAGE_DIAPER", "file": "images/diaper.png"},
         {"type": "png-trans", "name": "IMAGE_BOTTLE", "file": "images/bottle.png"}
       ]
-    },
-    "js": {
-      "main": "src/js/index.js"
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "baby-watch-reborn",
   "author": "saintyoga-Cyber",
-  "version": "1.3",
+  "version": "1.4",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
@@ -11,14 +11,9 @@
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],
-    "watchapp": {
-      "watchface": false
-    },
+    "watchapp": {"watchface": false},
     "capabilities": ["configurable", "timeline"],
-    "messageKeys": [
-      "EVENT_TYPE",
-      "EVENT_TIME"
-    ],
+    "messageKeys": ["EVENT_TYPE", "EVENT_TIME"],
     "resources": {
       "media": [
         {"type": "png", "name": "ACTION_MOON", "file": "images/moonaction.png"},

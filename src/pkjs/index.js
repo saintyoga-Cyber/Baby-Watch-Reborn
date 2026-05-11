@@ -152,115 +152,106 @@ function getPayloadValue(payload, stringKey, numericKey) {
 // ---- Settings Page ----
 
 function generateSettingsPage() {
-  var iconOptions = availableIcons.map(function(icon) {
-    return '<option value="system://images/' + icon.id + '">' + icon.name + '</option>';
-  }).join('\n');
+  // Serialize only the values needed by the page — icons are rebuilt in JS
+  var vals = {
+    n1: config.event1Name || defaultConfig.event1Name,
+    i1: config.event1Icon || defaultConfig.event1Icon,
+    n2: config.event2Name || defaultConfig.event2Name,
+    i2: config.event2Icon || defaultConfig.event2Icon,
+    n3: config.event3Name || defaultConfig.event3Name,
+    i3: config.event3Icon || defaultConfig.event3Icon,
+    n4: config.event4Name || defaultConfig.event4Name,
+    i4: config.event4Icon || defaultConfig.event4Icon,
+    n5: config.event5Name || defaultConfig.event5Name,
+    i5: config.event5Icon || defaultConfig.event5Icon,
+    haUrl:      config.haUrl      || '',
+    haToken:    config.haToken    || '',
+    haDeviceId: config.haDeviceId || ''
+  };
 
-  function eventSection(num, label, nameKey, iconKey) {
-    var nameVal = config[nameKey] || defaultConfig[nameKey];
-    var iconVal = config[iconKey] || defaultConfig[iconKey];
-    return '<div class="section">\n' +
-      '<h2>' + label + '</h2>\n' +
-      '<label>Event Name</label>\n' +
-      '<input type="text" id="' + nameKey + '" value="' + nameVal + '">\n' +
-      '<label>Timeline Icon</label>\n' +
-      '<select id="' + iconKey + '">' + iconOptions + '</select>\n' +
-      '</div>\n';
-  }
+  // Icon data injected once; selects are populated by JS on load
+  var iconsJson = JSON.stringify(availableIcons.map(function(ic) {
+    return [ic.id, ic.name];
+  }));
 
-  var haUrl      = config.haUrl      || '';
-  var haToken    = config.haToken    || '';
-  var haDeviceId = config.haDeviceId || '';
-
-  var html = '<!DOCTYPE html>\n' +
-    '<html><head>\n' +
-    '<meta charset="utf-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    '<title>Baby Watch Settings</title>\n' +
-    '<style>\n' +
-    'body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; background: #1a1a2e; color: #eee; margin: 0; }\n' +
-    'h1 { color: #4cc9f0; font-size: 24px; margin-bottom: 20px; text-align: center; }\n' +
-    '.section { background: #16213e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }\n' +
-    '.section h2 { color: #4cc9f0; font-size: 16px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #0f3460; }\n' +
-    'label { display: block; color: #aaa; font-size: 12px; margin-bottom: 4px; }\n' +
-    'input, select { width: 100%; padding: 12px; border: 1px solid #0f3460; border-radius: 8px; background: #0f3460; color: #fff; font-size: 16px; margin-bottom: 12px; box-sizing: border-box; }\n' +
-    'input:focus, select:focus { outline: none; border-color: #4cc9f0; }\n' +
-    '.btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 8px; font-size: 18px; font-weight: 600; cursor: pointer; margin-top: 8px; }\n' +
-    '.btn-save { background: #4cc9f0; color: #1a1a2e; }\n' +
-    '.btn-reset { background: transparent; border: 1px solid #666; color: #aaa; }\n' +
-    '.ha-note { color: #888; font-size: 11px; margin: -8px 0 12px 0; }\n' +
-    '</style>\n' +
-    '</head><body>\n' +
-    '<h1>Baby Watch Settings</h1>\n' +
-
-    eventSection(1, 'Bottle Feed',   'event1Name', 'event1Icon') +
-    eventSection(2, 'Breastfeed',    'event2Name', 'event2Icon') +
-    eventSection(3, 'Diaper Change', 'event3Name', 'event3Icon') +
-    eventSection(4, 'Sleep Started', 'event4Name', 'event4Icon') +
-    eventSection(5, 'Sleep Ended',   'event5Name', 'event5Icon') +
-
-    '<div class="section">\n' +
-    '<h2>Home Assistant</h2>\n' +
-    '<label>HA URL</label>\n' +
-    '<input type="text"     id="haUrl"      value="' + haUrl      + '" placeholder="http://homeassistant.local:8123">\n' +
-    '<label>Long-Lived Access Token</label>\n' +
-    '<input type="password" id="haToken"    value="' + haToken    + '" placeholder="eyJ0...">\n' +
-    '<p class="ha-note">Generate in HA → Profile → Long-Lived Access Tokens</p>\n' +
-    '<label>Child Device ID</label>\n' +
-    '<input type="text"     id="haDeviceId" value="' + haDeviceId + '" placeholder="abc123def456...">\n' +
-    '<p class="ha-note">Find in HA → Settings → Devices → your child\'s device</p>\n' +
-    '</div>\n' +
-
-    '<button class="btn btn-save"  onclick="saveSettings()">Save Settings</button>\n' +
-    '<button class="btn btn-reset" onclick="resetDefaults()">Reset to Defaults</button>\n' +
-
-    '<script>\n' +
-    'function setSelectValue(id, value) {\n' +
-    '  var s = document.getElementById(id);\n' +
-    '  for (var i = 0; i < s.options.length; i++) {\n' +
-    '    if (s.options[i].value === value) { s.selectedIndex = i; break; }\n' +
-    '  }\n' +
-    '}\n' +
-    'setSelectValue("event1Icon", "' + (config.event1Icon || defaultConfig.event1Icon) + '");\n' +
-    'setSelectValue("event2Icon", "' + (config.event2Icon || defaultConfig.event2Icon) + '");\n' +
-    'setSelectValue("event3Icon", "' + (config.event3Icon || defaultConfig.event3Icon) + '");\n' +
-    'setSelectValue("event4Icon", "' + (config.event4Icon || defaultConfig.event4Icon) + '");\n' +
-    'setSelectValue("event5Icon", "' + (config.event5Icon || defaultConfig.event5Icon) + '");\n' +
-    'function saveSettings() {\n' +
-    '  var cfg = {\n' +
-    '    event1Name: document.getElementById("event1Name").value,\n' +
-    '    event1Icon: document.getElementById("event1Icon").value,\n' +
-    '    event2Name: document.getElementById("event2Name").value,\n' +
-    '    event2Icon: document.getElementById("event2Icon").value,\n' +
-    '    event3Name: document.getElementById("event3Name").value,\n' +
-    '    event3Icon: document.getElementById("event3Icon").value,\n' +
-    '    event4Name: document.getElementById("event4Name").value,\n' +
-    '    event4Icon: document.getElementById("event4Icon").value,\n' +
-    '    event5Name: document.getElementById("event5Name").value,\n' +
-    '    event5Icon: document.getElementById("event5Icon").value,\n' +
-    '    haUrl:      document.getElementById("haUrl").value,\n' +
-    '    haToken:    document.getElementById("haToken").value,\n' +
-    '    haDeviceId: document.getElementById("haDeviceId").value\n' +
-    '  };\n' +
-    '  window.location.href = "pebblejs://close#" + encodeURIComponent(JSON.stringify(cfg));\n' +
-    '}\n' +
-    'function resetDefaults() {\n' +
-    '  document.getElementById("event1Name").value = "Bottle Feed";\n' +
-    '  document.getElementById("event2Name").value = "Breastfeed";\n' +
-    '  document.getElementById("event3Name").value = "Diaper Change";\n' +
-    '  document.getElementById("event4Name").value = "Sleep Started";\n' +
-    '  document.getElementById("event5Name").value = "Sleep Ended";\n' +
-    '  setSelectValue("event1Icon", "system://images/DINNER_RESERVATION");\n' +
-    '  setSelectValue("event2Icon", "system://images/GLUCOSE_MONITOR");\n' +
-    '  setSelectValue("event3Icon", "system://images/SCHEDULED_EVENT");\n' +
-    '  setSelectValue("event4Icon", "system://images/TIDE_IS_HIGH");\n' +
-    '  setSelectValue("event5Icon", "system://images/ALARM_CLOCK");\n' +
-    '  document.getElementById("haUrl").value      = "";\n' +
-    '  document.getElementById("haToken").value    = "";\n' +
-    '  document.getElementById("haDeviceId").value = "";\n' +
-    '}\n' +
-    '</script>\n' +
-    '</body></html>';
+  var html = '<!DOCTYPE html><html><head>' +
+    '<meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Baby Watch</title>' +
+    '<style>' +
+    'body{font-family:sans-serif;padding:16px;background:#1a1a2e;color:#eee;margin:0}' +
+    'h1{color:#4cc9f0;font-size:22px;margin-bottom:16px;text-align:center}' +
+    '.s{background:#16213e;border-radius:10px;padding:14px;margin-bottom:14px}' +
+    '.s h2{color:#4cc9f0;font-size:15px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #0f3460}' +
+    'label{display:block;color:#aaa;font-size:11px;margin-bottom:3px}' +
+    'input,select{width:100%;padding:10px;border:1px solid #0f3460;border-radius:7px;background:#0f3460;color:#fff;font-size:15px;margin-bottom:10px;box-sizing:border-box}' +
+    '.btn{display:block;width:100%;padding:14px;border:none;border-radius:7px;font-size:17px;font-weight:600;cursor:pointer;margin-top:8px}' +
+    '.save{background:#4cc9f0;color:#1a1a2e}' +
+    '.reset{background:transparent;border:1px solid #666;color:#aaa}' +
+    '.note{color:#888;font-size:11px;margin:-6px 0 10px}' +
+    '</style></head><body>' +
+    '<h1>Baby Watch Settings</h1>' +
+    '<div class="s"><h2>Bottle Feed</h2>' +
+      '<label>Name</label><input id="n1" value="' + vals.n1 + '">' +
+      '<label>Icon</label><select id="i1"></select></div>' +
+    '<div class="s"><h2>Breastfeed</h2>' +
+      '<label>Name</label><input id="n2" value="' + vals.n2 + '">' +
+      '<label>Icon</label><select id="i2"></select></div>' +
+    '<div class="s"><h2>Diaper Change</h2>' +
+      '<label>Name</label><input id="n3" value="' + vals.n3 + '">' +
+      '<label>Icon</label><select id="i3"></select></div>' +
+    '<div class="s"><h2>Sleep Started</h2>' +
+      '<label>Name</label><input id="n4" value="' + vals.n4 + '">' +
+      '<label>Icon</label><select id="i4"></select></div>' +
+    '<div class="s"><h2>Sleep Ended</h2>' +
+      '<label>Name</label><input id="n5" value="' + vals.n5 + '">' +
+      '<label>Icon</label><select id="i5"></select></div>' +
+    '<div class="s"><h2>Home Assistant</h2>' +
+      '<label>HA URL</label>' +
+      '<input id="haUrl" value="' + vals.haUrl + '" placeholder="http://homeassistant.local:8123">' +
+      '<label>Long-Lived Access Token</label>' +
+      '<input id="haToken" type="password" value="' + vals.haToken + '" placeholder="eyJ0...">' +
+      '<p class="note">HA → Profile → Long-Lived Access Tokens</p>' +
+      '<label>Child Device ID</label>' +
+      '<input id="haDeviceId" value="' + vals.haDeviceId + '" placeholder="abc123...">' +
+      '<p class="note">HA → Settings → Devices → your child\'s device</p>' +
+    '</div>' +
+    '<button class="btn save"  onclick="save()">Save</button>' +
+    '<button class="btn reset" onclick="rst()">Reset Defaults</button>' +
+    '<script>' +
+    'var icons=' + iconsJson + ';' +
+    'var cur=["' + vals.i1 + '","' + vals.i2 + '","' + vals.i3 + '","' + vals.i4 + '","' + vals.i5 + '"];' +
+    'icons.forEach(function(ic){' +
+    '  var o="<option value=\'system://images/"+ic[0]+"\'>" + ic[1] + "</option>";' +
+    '  for(var k=1;k<=5;k++){document.getElementById("i"+k).innerHTML+=o;}' +
+    '});' +
+    'for(var k=1;k<=5;k++){' +
+    '  var s=document.getElementById("i"+k);' +
+    '  for(var j=0;j<s.options.length;j++){if(s.options[j].value===cur[k-1]){s.selectedIndex=j;break;}}' +
+    '}' +
+    'function v(id){return document.getElementById(id).value;}' +
+    'function save(){' +
+    '  var cfg={' +
+    '    event1Name:v("n1"),event1Icon:v("i1"),' +
+    '    event2Name:v("n2"),event2Icon:v("i2"),' +
+    '    event3Name:v("n3"),event3Icon:v("i3"),' +
+    '    event4Name:v("n4"),event4Icon:v("i4"),' +
+    '    event5Name:v("n5"),event5Icon:v("i5"),' +
+    '    haUrl:v("haUrl"),haToken:v("haToken"),haDeviceId:v("haDeviceId")' +
+    '  };' +
+    '  window.location.href="pebblejs://close#"+encodeURIComponent(JSON.stringify(cfg));' +
+    '}' +
+    'function rst(){' +
+    '  document.getElementById("n1").value="Bottle Feed";' +
+    '  document.getElementById("n2").value="Breastfeed";' +
+    '  document.getElementById("n3").value="Diaper Change";' +
+    '  document.getElementById("n4").value="Sleep Started";' +
+    '  document.getElementById("n5").value="Sleep Ended";' +
+    '  document.getElementById("haUrl").value="";' +
+    '  document.getElementById("haToken").value="";' +
+    '  document.getElementById("haDeviceId").value="";' +
+    '}' +
+    '<\/script></body></html>';
 
   return html;
 }

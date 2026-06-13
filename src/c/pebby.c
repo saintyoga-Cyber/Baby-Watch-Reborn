@@ -458,28 +458,28 @@ static void window_load(Window *window) {
   int sinceY[3] = { bounds.size.h/3/2 + 2,  bounds.size.h/2 + 2,  5*bounds.size.h/3/2 + 2 };
   int textX = 0;
   int textW = contentWidth;
+  int bandW = contentWidth;
   // Sleep range ("HH:MM - HH:MM") font; shrunk on round so it never truncates.
   const char *moonTimeFont = FONT_KEY_GOTHIC_24_BOLD;
   // Focused middle (diaper) row font; enlarged on round.
   const char *diaperTimeFont = FONT_KEY_GOTHIC_24_BOLD;
 
 #if defined(PBL_ROUND)
-  // Centered-focus layout for the 180x180 circular display: emphasize the
-  // middle (diaper) band, shrink the top/bottom bands, and inset text
-  // horizontally so it never lands on the clipped curved edges.
-  int focusH = rowHeight + 24;                 // taller, emphasized middle band
-  int edgeH  = (bounds.size.h - focusH) / 2;   // top and bottom bands
-  bandY[0] = 0;                bandH[0] = edgeH;
-  bandY[1] = edgeH;            bandH[1] = focusH;
-  bandY[2] = edgeH + focusH;   bandH[2] = bounds.size.h - bandY[2] + 6;
+  // Centered-focus layout for the 180x180 circular display. Bands span the
+  // full width so they tuck under the black action bar's curved edge (no
+  // gap). Text is centered in the visible colored area and kept near each
+  // band's vertical centre, away from the narrow top/bottom arcs where it
+  // would otherwise clip.
+  int fullH = bounds.size.h + 6;   // restore the true 180px height
 
-  int inset = 18;                              // horizontal safe-area inset
-  textX = inset;
-  textW = contentWidth - inset;
+  bandW = bounds.size.w;
+  bandY[0] = 0;     bandH[0] = 42;            // smaller top (bottle) band
+  bandY[1] = 42;    bandH[1] = 78;            // emphasized middle (diaper) band
+  bandY[2] = 120;   bandH[2] = fullH - 120;   // roomy bottom (sleep) band
 
-  timeY[0]  = edgeH/2 - 20;                     sinceY[0]  = edgeH/2 + 4;
-  timeY[1]  = edgeH + focusH/2 - 22;            sinceY[1]  = edgeH + focusH/2 + 6;
-  timeY[2]  = edgeH + focusH + edgeH/2 - 22;    sinceY[2]  = edgeH + focusH + edgeH/2 + 4;
+  timeY[0]  = 6;    sinceY[0]  = 26;
+  timeY[1]  = 56;   sinceY[1]  = 88;
+  timeY[2]  = 126;  sinceY[2]  = 150;
 
   moonTimeFont = FONT_KEY_GOTHIC_18_BOLD;       // fits "HH:MM - HH:MM" on the narrow circle
   diaperTimeFont = FONT_KEY_GOTHIC_28_BOLD;     // emphasize the focused middle row
@@ -487,15 +487,15 @@ static void window_load(Window *window) {
 
   // Create colored background layers (only on color devices)
   #ifdef PBL_COLOR
-  bottleBgLayer = layer_create((GRect){ .origin = {0, bandY[0]}, .size = {contentWidth, bandH[0]} });
+  bottleBgLayer = layer_create((GRect){ .origin = {0, bandY[0]}, .size = {bandW, bandH[0]} });
   layer_set_update_proc(bottleBgLayer, bottle_bg_update_proc);
   layer_add_child(window_layer, bottleBgLayer);
 
-  diaperBgLayer = layer_create((GRect){ .origin = {0, bandY[1]}, .size = {contentWidth, bandH[1]} });
+  diaperBgLayer = layer_create((GRect){ .origin = {0, bandY[1]}, .size = {bandW, bandH[1]} });
   layer_set_update_proc(diaperBgLayer, diaper_bg_update_proc);
   layer_add_child(window_layer, diaperBgLayer);
 
-  moonBgLayer = layer_create((GRect){ .origin = {0, bandY[2]}, .size = {contentWidth, bandH[2]} });
+  moonBgLayer = layer_create((GRect){ .origin = {0, bandY[2]}, .size = {bandW, bandH[2]} });
   layer_set_update_proc(moonBgLayer, moon_bg_update_proc);
   layer_add_child(window_layer, moonBgLayer);
   #endif

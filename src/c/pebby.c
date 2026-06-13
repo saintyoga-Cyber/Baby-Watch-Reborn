@@ -79,7 +79,7 @@ static TextLayer *pickerOffsetLayer;
 static int pendingCategory = CATEGORY_BOTTLE;
 static int pendingOffsetMin = 0;
 static char pickerTitleText[12];
-static char pickerOffsetText[20];
+static char pickerOffsetText[40];
 
 
 /***** Background Layer Draw Callbacks *****/
@@ -156,9 +156,7 @@ static void setTimeRangeText(time_t startTimestamp, time_t endTimestamp, char *t
       strcpy(sleepEndStr, "...");
     }
 
-    strncpy(text, sleepStartStr, sizeof(sleepStartStr));
-    strncat(text, " - ", 4);
-    strncat(text, sleepEndStr, sizeof(sleepEndStr));
+    snprintf(text, 14, "%s - %s", sleepStartStr, sleepEndStr);
   }
 
   text_layer_set_text(textLayer, text);

@@ -451,24 +451,60 @@ static void window_load(Window *window) {
   int contentWidth = bounds.size.w - ACTION_BAR_WIDTH;
   int rowHeight = bounds.size.h / 3;
 
+  // ----- Layout parameters (rectangular defaults: aplite/basalt/diorite/emery) -----
+  // Background bands {origin.y, height} for bottle, diaper, moon rows.
+  int bandY[3] = { 0, rowHeight, rowHeight * 2 };
+  int bandH[3] = { rowHeight, rowHeight, rowHeight + 6 };
+  // Per-row text Y for the time line and the "since" line.
+  int timeY[3]  = { bounds.size.h/3/2 - 20, bounds.size.h/2 - 20, 5*bounds.size.h/3/2 - 20 };
+  int sinceY[3] = { bounds.size.h/3/2 + 2,  bounds.size.h/2 + 2,  5*bounds.size.h/3/2 + 2 };
+  int textX = 0;
+  int textW = contentWidth;
+  // Sleep range ("HH:MM - HH:MM") font; shrunk on round so it never truncates.
+  const char *moonTimeFont = FONT_KEY_GOTHIC_24_BOLD;
+  // Focused middle (diaper) row font; enlarged on round.
+  const char *diaperTimeFont = FONT_KEY_GOTHIC_24_BOLD;
+
+#if defined(PBL_ROUND)
+  // Centered-focus layout for the 180x180 circular display: emphasize the
+  // middle (diaper) band, shrink the top/bottom bands, and inset text
+  // horizontally so it never lands on the clipped curved edges.
+  int focusH = rowHeight + 24;                 // taller, emphasized middle band
+  int edgeH  = (bounds.size.h - focusH) / 2;   // top and bottom bands
+  bandY[0] = 0;                bandH[0] = edgeH;
+  bandY[1] = edgeH;            bandH[1] = focusH;
+  bandY[2] = edgeH + focusH;   bandH[2] = bounds.size.h - bandY[2] + 6;
+
+  int inset = 18;                              // horizontal safe-area inset
+  textX = inset;
+  textW = contentWidth - inset;
+
+  timeY[0]  = edgeH/2 - 20;                     sinceY[0]  = edgeH/2 + 4;
+  timeY[1]  = edgeH + focusH/2 - 22;            sinceY[1]  = edgeH + focusH/2 + 6;
+  timeY[2]  = edgeH + focusH + edgeH/2 - 22;    sinceY[2]  = edgeH + focusH + edgeH/2 + 4;
+
+  moonTimeFont = FONT_KEY_GOTHIC_18_BOLD;       // fits "HH:MM - HH:MM" on the narrow circle
+  diaperTimeFont = FONT_KEY_GOTHIC_28_BOLD;     // emphasize the focused middle row
+#endif
+
   // Create colored background layers (only on color devices)
   #ifdef PBL_COLOR
-  bottleBgLayer = layer_create((GRect){ .origin = {0, 0}, .size = {contentWidth, rowHeight} });
+  bottleBgLayer = layer_create((GRect){ .origin = {0, bandY[0]}, .size = {contentWidth, bandH[0]} });
   layer_set_update_proc(bottleBgLayer, bottle_bg_update_proc);
   layer_add_child(window_layer, bottleBgLayer);
 
-  diaperBgLayer = layer_create((GRect){ .origin = {0, rowHeight}, .size = {contentWidth, rowHeight} });
+  diaperBgLayer = layer_create((GRect){ .origin = {0, bandY[1]}, .size = {contentWidth, bandH[1]} });
   layer_set_update_proc(diaperBgLayer, diaper_bg_update_proc);
   layer_add_child(window_layer, diaperBgLayer);
 
-  moonBgLayer = layer_create((GRect){ .origin = {0, rowHeight * 2}, .size = {contentWidth, rowHeight + 6} });
+  moonBgLayer = layer_create((GRect){ .origin = {0, bandY[2]}, .size = {contentWidth, bandH[2]} });
   layer_set_update_proc(moonBgLayer, moon_bg_update_proc);
   layer_add_child(window_layer, moonBgLayer);
   #endif
 
-  // Text layers - using original positioning from Pebby
+  // Text layers
 
-  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
+  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[0] }, .size = {textW, 24} });
   text_layer_set_text_alignment(bottleSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(bottleSinceTextLayer, "");
   text_layer_set_font(bottleSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
@@ -478,7 +514,7 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(bottleSinceTextLayer));
 
-  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 + 2 }, .size = {contentWidth, 24} });
+  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[1] }, .size = {textW, 24} });
   text_layer_set_font(diaperSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(diaperSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(diaperSinceTextLayer, "");
@@ -488,7 +524,7 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(diaperSinceTextLayer));
 
-  moonSinceTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
+  moonSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[2] }, .size = {textW, 24} });
   text_layer_set_font(moonSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(moonSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(moonSinceTextLayer, "");
@@ -499,7 +535,7 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, text_layer_get_layer(moonSinceTextLayer));
 
 
-  bottleTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
+  bottleTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[0] }, .size = {textW, 24} });
   text_layer_set_text_alignment(bottleTextLayer, GTextAlignmentCenter);
   text_layer_set_text(bottleTextLayer, "");
   text_layer_set_font(bottleTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
@@ -509,8 +545,8 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(bottleTextLayer));
 
-  diaperTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 - 20 }, .size = {contentWidth, 24} });
-  text_layer_set_font(diaperTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  diaperTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[1] }, .size = {textW, 30} });
+  text_layer_set_font(diaperTextLayer, fonts_get_system_font(diaperTimeFont));
   text_layer_set_text_alignment(diaperTextLayer, GTextAlignmentCenter);
   text_layer_set_text(diaperTextLayer, "");
   #ifdef PBL_COLOR
@@ -519,8 +555,8 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(diaperTextLayer));
 
-  moonTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
-  text_layer_set_font(moonTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  moonTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[2] }, .size = {textW, 24} });
+  text_layer_set_font(moonTextLayer, fonts_get_system_font(moonTimeFont));
   text_layer_set_text_alignment(moonTextLayer, GTextAlignmentCenter);
   text_layer_set_text(moonTextLayer, "");
   #ifdef PBL_COLOR

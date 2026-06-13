@@ -20,6 +20,13 @@
 #define EVENT_SLEEP_START 3
 #define EVENT_SLEEP_END 4
 
+/***** Offset Picker (long-press: log an event in the past) *****/
+#define CATEGORY_BOTTLE 1
+#define CATEGORY_DIAPER 2
+#define CATEGORY_SLEEP 3
+#define OFFSET_STEP_MIN 15
+#define OFFSET_MAX_MIN 720
+
 
 /***** Variables *****/
 
@@ -64,6 +71,15 @@ static time_t bottleStart = 0;
 static time_t diaperStart = 0;
 static time_t sleepStart = 0;
 static time_t sleepEnd = 0;
+
+// Offset picker (long-press: log in the past)
+static Window *pickerWindow = NULL;
+static TextLayer *pickerTitleLayer;
+static TextLayer *pickerOffsetLayer;
+static int pendingCategory = CATEGORY_BOTTLE;
+static int pendingOffsetMin = 0;
+static char pickerTitleText[12];
+static char pickerOffsetText[20];
 
 
 /***** Background Layer Draw Callbacks *****/
@@ -168,37 +184,26 @@ void sendTimelineEvent(int eventType, time_t timestamp) {
   app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld", eventType, timestamp);
 }
 
-void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  ButtonId bt = click_recognizer_get_button_id(recognizer);
-  char *targetText = timeTextUp;
-  TextLayer *targetLayer = bottleTextLayer;
-  int persistKey = PERSIST_BOTTLE;
-  int eventType = EVENT_BOTTLE;
+// Timestamp-driven logging helpers, reused by both tap (now) and the
+// offset picker (back-dated). The timestamp is supplied by the caller.
 
-  time_t t = time(NULL);
-
-  if (bt == BUTTON_ID_SELECT) {
-    targetText = timeTextMiddle;
-    targetLayer = diaperTextLayer;
-    persistKey = PERSIST_DIAPER;
-    eventType = EVENT_DIAPER;
-    diaperStart = t;
-    setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
-  } else {
-    bottleStart = t;
-    setTimeSinceText(bottleStart, timeSinceTextUp, bottleSinceTextLayer);
-  }
-
-  setTimeText(t, targetText, targetLayer);
-
-  persist_write_int(persistKey, t);
-
-  sendTimelineEvent(eventType, t);
+static void logBottle(time_t t) {
+  bottleStart = t;
+  setTimeText(t, timeTextUp, bottleTextLayer);
+  setTimeSinceText(bottleStart, timeSinceTextUp, bottleSinceTextLayer);
+  persist_write_int(PERSIST_BOTTLE, t);
+  sendTimelineEvent(EVENT_BOTTLE, t);
 }
 
-void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  time_t t = time(NULL);
+static void logDiaper(time_t t) {
+  diaperStart = t;
+  setTimeText(t, timeTextMiddle, diaperTextLayer);
+  setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
+  persist_write_int(PERSIST_DIAPER, t);
+  sendTimelineEvent(EVENT_DIAPER, t);
+}
 
+static void toggleSleep(time_t t) {
   if (sleeping == 0) {
     sleeping = 1;
     sleepStart = t;
@@ -221,11 +226,149 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
   setTimeSinceText(MAX(sleepStart, sleepEnd), timeSinceTextDown, moonSinceTextLayer);
 }
 
+void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
+  ButtonId bt = click_recognizer_get_button_id(recognizer);
+  time_t t = time(NULL);
+
+  if (bt == BUTTON_ID_SELECT) {
+    logDiaper(t);
+  } else {
+    logBottle(t);
+  }
+}
+
+void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
+  toggleSleep(time(NULL));
+}
+
+
+/***** Offset Picker Window (long-press to log in the past) *****/
+
+static void updatePickerLabel(void) {
+  const char *name = "Bottle";
+  if (pendingCategory == CATEGORY_DIAPER) {
+    name = "Diaper";
+  } else if (pendingCategory == CATEGORY_SLEEP) {
+    name = "Sleep";
+  }
+  snprintf(pickerTitleText, sizeof(pickerTitleText), "%s", name);
+  text_layer_set_text(pickerTitleLayer, pickerTitleText);
+
+  if (pendingOffsetMin == 0) {
+    snprintf(pickerOffsetText, sizeof(pickerOffsetText), "now");
+  } else if (pendingOffsetMin < 60) {
+    snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d min ago", pendingOffsetMin);
+  } else {
+    int hours = pendingOffsetMin / 60;
+    int minutes = pendingOffsetMin % 60;
+    if (minutes == 0) {
+      snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d h ago", hours);
+    } else {
+      snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d h %d min ago", hours, minutes);
+    }
+  }
+  text_layer_set_text(pickerOffsetLayer, pickerOffsetText);
+}
+
+static void picker_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingOffsetMin += OFFSET_STEP_MIN;
+  if (pendingOffsetMin > OFFSET_MAX_MIN) {
+    pendingOffsetMin = OFFSET_MAX_MIN;
+  }
+  updatePickerLabel();
+}
+
+static void picker_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingOffsetMin -= OFFSET_STEP_MIN;
+  if (pendingOffsetMin < 0) {
+    pendingOffsetMin = 0;
+  }
+  updatePickerLabel();
+}
+
+static void picker_select_handler(ClickRecognizerRef recognizer, void *context) {
+  time_t t = time(NULL) - (time_t) pendingOffsetMin * 60;
+
+  switch (pendingCategory) {
+    case CATEGORY_DIAPER:
+      logDiaper(t);
+      break;
+    case CATEGORY_SLEEP:
+      toggleSleep(t);
+      break;
+    default:
+      logBottle(t);
+      break;
+  }
+
+  window_stack_pop(true);
+}
+
+static void picker_config_provider(void *context) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 150, picker_up_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 150, picker_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, picker_select_handler);
+}
+
+static void picker_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  pickerTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(pickerTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(pickerTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  layer_add_child(root, text_layer_get_layer(pickerTitleLayer));
+
+  pickerOffsetLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(pickerOffsetLayer, GTextAlignmentCenter);
+  text_layer_set_font(pickerOffsetLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(pickerOffsetLayer));
+
+  updatePickerLabel();
+}
+
+static void picker_window_unload(Window *win) {
+  text_layer_destroy(pickerTitleLayer);
+  text_layer_destroy(pickerOffsetLayer);
+}
+
+static void show_picker(int category) {
+  pendingCategory = category;
+  pendingOffsetMin = 0;
+
+  if (!pickerWindow) {
+    pickerWindow = window_create();
+    window_set_window_handlers(pickerWindow, (WindowHandlers) {
+      .load = picker_window_load,
+      .unload = picker_window_unload
+    });
+    window_set_click_config_provider(pickerWindow, (ClickConfigProvider) picker_config_provider);
+  }
+
+  window_stack_push(pickerWindow, true);
+}
+
+void bottle_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_BOTTLE);
+}
+
+void diaper_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_DIAPER);
+}
+
+void sleep_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_SLEEP);
+}
+
 
 void config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_single_click_handler);
   window_single_click_subscribe(BUTTON_ID_SELECT, up_single_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_single_click_handler);
+
+  window_long_click_subscribe(BUTTON_ID_UP, 0, bottle_long_click_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 0, diaper_long_click_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_DOWN, 0, sleep_long_click_handler, NULL);
 }
 
 void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
@@ -474,6 +617,9 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  if (pickerWindow) {
+    window_destroy(pickerWindow);
+  }
   window_destroy(window);
 }
 

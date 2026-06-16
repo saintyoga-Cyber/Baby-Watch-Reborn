@@ -36,6 +36,7 @@ var EVENT_SLEEP_END = 4;
 // Message key indices
 var KEY_EVENT_TYPE = 0;
 var KEY_EVENT_TIME = 1;
+var KEY_EVENT_VOLUME = 2;
 
 // Available icons for configuration
 var availableIcons = [
@@ -85,22 +86,34 @@ function formatTime(timestamp) {
   return hours + ':' + minutes + ' ' + ampm;
 }
 
-function createEventPin(eventType, timestamp) {
+function createEventPin(eventType, timestamp, volume) {
   var eventCfg = getEventConfig(eventType);
-  
+
   var date = new Date(timestamp * 1000);
   var isoTime = date.toISOString();
   var pinId = 'baby-watch-' + eventType + '-' + timestamp;
-  
+
+  var body = "Logged at " + formatTime(timestamp);
+
+  var layout = {
+    "type": "genericPin",
+    "title": eventCfg.name,
+    "tinyIcon": eventCfg.icon
+  };
+
+  // Bottle feeds may carry a milk volume (mL). 0 / missing means it was skipped.
+  if (eventType === EVENT_BOTTLE && volume) {
+    var volumeText = volume + " mL";
+    layout.subtitle = volumeText;           // shown as the timeline list subtext
+    body = volumeText + "\n" + body;        // and inside the opened pin
+  }
+
+  layout.body = body;
+
   var pin = {
     "id": pinId,
     "time": isoTime,
-    "layout": {
-      "type": "genericPin",
-      "title": eventCfg.name,
-      "body": "Logged at " + formatTime(timestamp),
-      "tinyIcon": eventCfg.icon
-    },
+    "layout": layout,
     "reminders": [{
       "time": isoTime,
       "layout": {
@@ -110,12 +123,12 @@ function createEventPin(eventType, timestamp) {
       }
     }]
   };
-  
+
   return pin;
 }
 
-function pushTimelinePin(eventType, timestamp) {
-  var pin = createEventPin(eventType, timestamp);
+function pushTimelinePin(eventType, timestamp, volume) {
+  var pin = createEventPin(eventType, timestamp, volume);
   if (!pin) return;
   
   console.log('Pushing timeline pin: ' + JSON.stringify(pin));
@@ -269,11 +282,12 @@ Pebble.addEventListener('appmessage', function(e) {
   
   var eventType = getPayloadValue(e.payload, 'EVENT_TYPE', KEY_EVENT_TYPE);
   var timestamp = getPayloadValue(e.payload, 'EVENT_TIME', KEY_EVENT_TIME);
-  
-  console.log('eventType=' + eventType + ', timestamp=' + timestamp);
-  
+  var volume = getPayloadValue(e.payload, 'EVENT_VOLUME', KEY_EVENT_VOLUME);
+
+  console.log('eventType=' + eventType + ', timestamp=' + timestamp + ', volume=' + volume);
+
   if (eventType !== undefined && timestamp !== undefined) {
-    pushTimelinePin(eventType, timestamp);
+    pushTimelinePin(eventType, timestamp, volume);
   } else {
     console.log('ERROR: Missing data. Keys: ' + Object.keys(e.payload).join(', '));
   }

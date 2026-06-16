@@ -27,6 +27,12 @@
 #define OFFSET_STEP_MIN 15
 #define OFFSET_MAX_MIN 720
 
+/***** Volume Picker (bottle feed: log milk volume) *****/
+#define VOLUME_STEP_ML 60
+#define VOLUME_MIN_ML 0
+#define VOLUME_MAX_ML 600
+#define VOLUME_DEFAULT_ML 120
+
 
 /***** Variables *****/
 
@@ -80,6 +86,14 @@ static int pendingCategory = CATEGORY_BOTTLE;
 static int pendingOffsetMin = 0;
 static char pickerTitleText[12];
 static char pickerOffsetText[40];
+
+// Volume picker (bottle feed: milk volume in mL; 0 = skipped/not recorded)
+static Window *volumeWindow = NULL;
+static TextLayer *volumeTitleLayer;
+static TextLayer *volumeValueLayer;
+static int pendingVolumeMl = VOLUME_DEFAULT_ML;
+static time_t pendingBottleTime = 0;
+static char volumeValueText[16];
 
 
 /***** Background Layer Draw Callbacks *****/
@@ -173,13 +187,18 @@ void sendToPhone(int key, time_t message) {
   app_message_outbox_send();
 }
 
-void sendTimelineEvent(int eventType, time_t timestamp) {
+// Forward declaration: bottle logging opens the volume picker, which lives
+// further down with the other picker code.
+static void show_volume_picker(void);
+
+void sendTimelineEvent(int eventType, time_t timestamp, int volumeMl) {
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TYPE, eventType);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TIME, (int32_t)timestamp);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_VOLUME, volumeMl);
   app_message_outbox_send();
-  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld", eventType, timestamp);
+  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld, volume=%d", eventType, timestamp, volumeMl);
 }
 
 // Timestamp-driven logging helpers, reused by both tap (now) and the
@@ -190,7 +209,10 @@ static void logBottle(time_t t) {
   setTimeText(t, timeTextUp, bottleTextLayer);
   setTimeSinceText(bottleStart, timeSinceTextUp, bottleSinceTextLayer);
   persist_write_int(PERSIST_BOTTLE, t);
-  sendTimelineEvent(EVENT_BOTTLE, t);
+  // The timeline event is sent from the volume picker (after a volume is
+  // chosen, or skipped via BACK), so the volume can be attached to the pin.
+  pendingBottleTime = t;
+  show_volume_picker();
 }
 
 static void logDiaper(time_t t) {
@@ -198,7 +220,7 @@ static void logDiaper(time_t t) {
   setTimeText(t, timeTextMiddle, diaperTextLayer);
   setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
   persist_write_int(PERSIST_DIAPER, t);
-  sendTimelineEvent(EVENT_DIAPER, t);
+  sendTimelineEvent(EVENT_DIAPER, t, 0);
 }
 
 static void toggleSleep(time_t t) {
@@ -210,14 +232,14 @@ static void toggleSleep(time_t t) {
     persist_write_int(PERSIST_MOON_START, sleepStart);
     persist_write_int(PERSIST_MOON_END, 0);
 
-    sendTimelineEvent(EVENT_SLEEP_START, t);
+    sendTimelineEvent(EVENT_SLEEP_START, t, 0);
   } else {
     sleeping = 0;
     sleepEnd = t;
 
     persist_write_int(PERSIST_MOON_END, sleepEnd);
 
-    sendTimelineEvent(EVENT_SLEEP_END, t);
+    sendTimelineEvent(EVENT_SLEEP_END, t, 0);
   }
 
   setTimeRangeText(sleepStart, sleepEnd, timeTextDown, moonTextLayer);
@@ -287,6 +309,10 @@ static void picker_down_handler(ClickRecognizerRef recognizer, void *context) {
 static void picker_select_handler(ClickRecognizerRef recognizer, void *context) {
   time_t t = time(NULL) - (time_t) pendingOffsetMin * 60;
 
+  // Close the offset picker first so that, for a bottle, the volume picker
+  // opened by logBottle() lands cleanly on top of the main window.
+  window_stack_pop(true);
+
   switch (pendingCategory) {
     case CATEGORY_DIAPER:
       logDiaper(t);
@@ -298,8 +324,6 @@ static void picker_select_handler(ClickRecognizerRef recognizer, void *context) 
       logBottle(t);
       break;
   }
-
-  window_stack_pop(true);
 }
 
 static void picker_config_provider(void *context) {
@@ -356,6 +380,90 @@ void diaper_long_click_handler(ClickRecognizerRef recognizer, void *context) {
 
 void sleep_long_click_handler(ClickRecognizerRef recognizer, void *context) {
   show_picker(CATEGORY_SLEEP);
+}
+
+
+/***** Volume Picker Window (bottle feed: log milk volume) *****/
+
+static void updateVolumeLabel(void) {
+  if (pendingVolumeMl <= 0) {
+    snprintf(volumeValueText, sizeof(volumeValueText), "Skip");
+  } else {
+    snprintf(volumeValueText, sizeof(volumeValueText), "%d mL", pendingVolumeMl);
+  }
+  text_layer_set_text(volumeValueLayer, volumeValueText);
+}
+
+static void volume_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingVolumeMl += VOLUME_STEP_ML;
+  if (pendingVolumeMl > VOLUME_MAX_ML) {
+    pendingVolumeMl = VOLUME_MAX_ML;
+  }
+  updateVolumeLabel();
+}
+
+static void volume_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingVolumeMl -= VOLUME_STEP_ML;
+  if (pendingVolumeMl < VOLUME_MIN_ML) {
+    pendingVolumeMl = VOLUME_MIN_ML;
+  }
+  updateVolumeLabel();
+}
+
+static void volume_select_handler(ClickRecognizerRef recognizer, void *context) {
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, pendingVolumeMl);
+  window_stack_pop(true);
+}
+
+static void volume_back_handler(ClickRecognizerRef recognizer, void *context) {
+  // Skip the volume: still log the feed, just without a recorded amount.
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, 0);
+  window_stack_pop(true);
+}
+
+static void volume_config_provider(void *context) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 150, volume_up_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 150, volume_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, volume_select_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, volume_back_handler);
+}
+
+static void volume_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  volumeTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(volumeTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(volumeTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_text(volumeTitleLayer, "Milk");
+  layer_add_child(root, text_layer_get_layer(volumeTitleLayer));
+
+  volumeValueLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(volumeValueLayer, GTextAlignmentCenter);
+  text_layer_set_font(volumeValueLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(volumeValueLayer));
+
+  updateVolumeLabel();
+}
+
+static void volume_window_unload(Window *win) {
+  text_layer_destroy(volumeTitleLayer);
+  text_layer_destroy(volumeValueLayer);
+}
+
+static void show_volume_picker(void) {
+  pendingVolumeMl = VOLUME_DEFAULT_ML;
+
+  if (!volumeWindow) {
+    volumeWindow = window_create();
+    window_set_window_handlers(volumeWindow, (WindowHandlers) {
+      .load = volume_window_load,
+      .unload = volume_window_unload
+    });
+    window_set_click_config_provider(volumeWindow, (ClickConfigProvider) volume_config_provider);
+  }
+
+  window_stack_push(volumeWindow, true);
 }
 
 
@@ -653,6 +761,9 @@ static void init(void) {
 static void deinit(void) {
   if (pickerWindow) {
     window_destroy(pickerWindow);
+  }
+  if (volumeWindow) {
+    window_destroy(volumeWindow);
   }
   window_destroy(window);
 }

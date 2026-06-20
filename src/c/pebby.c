@@ -33,6 +33,11 @@
 #define VOLUME_MAX_ML 600
 #define VOLUME_DEFAULT_ML 120
 
+/***** Diaper Type Picker (pee / poo / both; 0 = skipped/not recorded) *****/
+#define DIAPER_PEE 1
+#define DIAPER_POO 2
+#define DIAPER_BOTH 3
+
 
 /***** Variables *****/
 
@@ -94,6 +99,14 @@ static TextLayer *volumeValueLayer;
 static int pendingVolumeMl = VOLUME_DEFAULT_ML;
 static time_t pendingBottleTime = 0;
 static char volumeValueText[16];
+
+// Diaper type picker (pee / poo / both; 0 = skipped/not recorded)
+static Window *diaperWindow = NULL;
+static TextLayer *diaperPickTitleLayer;
+static TextLayer *diaperPickValueLayer;
+static int pendingDiaperType = DIAPER_PEE;
+static time_t pendingDiaperTime = 0;
+static char diaperValueText[8];
 
 
 /***** Background Layer Draw Callbacks *****/
@@ -187,18 +200,20 @@ void sendToPhone(int key, time_t message) {
   app_message_outbox_send();
 }
 
-// Forward declaration: bottle logging opens the volume picker, which lives
+// Forward declarations: bottle/diaper logging open their pickers, which live
 // further down with the other picker code.
 static void show_volume_picker(void);
+static void show_diaper_picker(void);
 
-void sendTimelineEvent(int eventType, time_t timestamp, int volumeMl) {
+void sendTimelineEvent(int eventType, time_t timestamp, int volumeMl, int diaperType) {
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TYPE, eventType);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TIME, (int32_t)timestamp);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_VOLUME, volumeMl);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_DIAPER_TYPE, diaperType);
   app_message_outbox_send();
-  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld, volume=%d", eventType, timestamp, volumeMl);
+  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld, volume=%d, diaper=%d", eventType, timestamp, volumeMl, diaperType);
 }
 
 // Timestamp-driven logging helpers, reused by both tap (now) and the
@@ -220,7 +235,10 @@ static void logDiaper(time_t t) {
   setTimeText(t, timeTextMiddle, diaperTextLayer);
   setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
   persist_write_int(PERSIST_DIAPER, t);
-  sendTimelineEvent(EVENT_DIAPER, t, 0);
+  // The timeline event is sent from the diaper-type picker (after pee/poo/both
+  // is chosen, or skipped via BACK), so the type can be attached to the pin.
+  pendingDiaperTime = t;
+  show_diaper_picker();
 }
 
 static void toggleSleep(time_t t) {
@@ -232,14 +250,14 @@ static void toggleSleep(time_t t) {
     persist_write_int(PERSIST_MOON_START, sleepStart);
     persist_write_int(PERSIST_MOON_END, 0);
 
-    sendTimelineEvent(EVENT_SLEEP_START, t, 0);
+    sendTimelineEvent(EVENT_SLEEP_START, t, 0, 0);
   } else {
     sleeping = 0;
     sleepEnd = t;
 
     persist_write_int(PERSIST_MOON_END, sleepEnd);
 
-    sendTimelineEvent(EVENT_SLEEP_END, t, 0);
+    sendTimelineEvent(EVENT_SLEEP_END, t, 0, 0);
   }
 
   setTimeRangeText(sleepStart, sleepEnd, timeTextDown, moonTextLayer);
@@ -411,13 +429,13 @@ static void volume_down_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 static void volume_select_handler(ClickRecognizerRef recognizer, void *context) {
-  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, pendingVolumeMl);
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, pendingVolumeMl, 0);
   window_stack_pop(true);
 }
 
 static void volume_back_handler(ClickRecognizerRef recognizer, void *context) {
   // Skip the volume: still log the feed, just without a recorded amount.
-  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, 0);
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, 0, 0);
   window_stack_pop(true);
 }
 
@@ -464,6 +482,92 @@ static void show_volume_picker(void) {
   }
 
   window_stack_push(volumeWindow, true);
+}
+
+
+/***** Diaper Type Picker Window (pee / poo / both) *****/
+
+static void updateDiaperLabel(void) {
+  const char *label = "Pee";
+  if (pendingDiaperType == DIAPER_POO) {
+    label = "Poo";
+  } else if (pendingDiaperType == DIAPER_BOTH) {
+    label = "Both";
+  }
+  snprintf(diaperValueText, sizeof(diaperValueText), "%s", label);
+  text_layer_set_text(diaperPickValueLayer, diaperValueText);
+}
+
+static void diaper_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingDiaperType += 1;
+  if (pendingDiaperType > DIAPER_BOTH) {
+    pendingDiaperType = DIAPER_PEE;   // wrap around
+  }
+  updateDiaperLabel();
+}
+
+static void diaper_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingDiaperType -= 1;
+  if (pendingDiaperType < DIAPER_PEE) {
+    pendingDiaperType = DIAPER_BOTH;  // wrap around
+  }
+  updateDiaperLabel();
+}
+
+static void diaper_select_handler(ClickRecognizerRef recognizer, void *context) {
+  sendTimelineEvent(EVENT_DIAPER, pendingDiaperTime, 0, pendingDiaperType);
+  window_stack_pop(true);
+}
+
+static void diaper_back_handler(ClickRecognizerRef recognizer, void *context) {
+  // Skip the type: still log the change, just without a recorded type.
+  sendTimelineEvent(EVENT_DIAPER, pendingDiaperTime, 0, 0);
+  window_stack_pop(true);
+}
+
+static void diaper_config_provider(void *context) {
+  window_single_click_subscribe(BUTTON_ID_UP, diaper_up_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, diaper_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, diaper_select_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, diaper_back_handler);
+}
+
+static void diaper_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  diaperPickTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(diaperPickTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(diaperPickTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_text(diaperPickTitleLayer, "Diaper");
+  layer_add_child(root, text_layer_get_layer(diaperPickTitleLayer));
+
+  diaperPickValueLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(diaperPickValueLayer, GTextAlignmentCenter);
+  text_layer_set_font(diaperPickValueLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(diaperPickValueLayer));
+
+  updateDiaperLabel();
+}
+
+static void diaper_window_unload(Window *win) {
+  text_layer_destroy(diaperPickTitleLayer);
+  text_layer_destroy(diaperPickValueLayer);
+}
+
+static void show_diaper_picker(void) {
+  pendingDiaperType = DIAPER_PEE;
+
+  if (!diaperWindow) {
+    diaperWindow = window_create();
+    window_set_window_handlers(diaperWindow, (WindowHandlers) {
+      .load = diaper_window_load,
+      .unload = diaper_window_unload
+    });
+    window_set_click_config_provider(diaperWindow, (ClickConfigProvider) diaper_config_provider);
+  }
+
+  window_stack_push(diaperWindow, true);
 }
 
 
@@ -764,6 +868,9 @@ static void deinit(void) {
   }
   if (volumeWindow) {
     window_destroy(volumeWindow);
+  }
+  if (diaperWindow) {
+    window_destroy(diaperWindow);
   }
   window_destroy(window);
 }

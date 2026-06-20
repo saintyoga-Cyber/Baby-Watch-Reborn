@@ -13,7 +13,7 @@
     "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],
     "watchapp": {"watchface": false},
     "capabilities": ["configurable", "timeline"],
-    "messageKeys": ["EVENT_TYPE", "EVENT_TIME", "EVENT_VOLUME"],
+    "messageKeys": ["EVENT_TYPE", "EVENT_TIME", "EVENT_VOLUME", "EVENT_DIAPER_TYPE"],
     "resources": {
       "media": [
         {"type": "png", "name": "ACTION_MOON", "file": "images/moonaction.png"},

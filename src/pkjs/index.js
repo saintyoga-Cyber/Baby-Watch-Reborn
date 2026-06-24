@@ -1,32 +1,5 @@
 var timeline = require('./timeline');
 
-// Default configuration - can be overridden by settings
-var defaultConfig = {
-  event1Name: "Bottle Feed",
-  event1Icon: "system://images/DINNER_RESERVATION",
-  event2Name: "Diaper Change", 
-  event2Icon: "system://images/SCHEDULED_EVENT",
-  event3Name: "Sleep Started",
-  event3Icon: "system://images/TIDE_IS_HIGH",
-  event4Name: "Sleep Ended",
-  event4Icon: "system://images/ALARM_CLOCK"
-};
-
-// Load saved configuration or use defaults
-var config = {};
-try {
-  var savedConfig = localStorage.getItem('babyWatchConfig');
-  if (savedConfig) {
-    config = JSON.parse(savedConfig);
-    console.log('Loaded saved config');
-  } else {
-    config = defaultConfig;
-  }
-} catch (e) {
-  config = defaultConfig;
-  console.log('Using default config');
-}
-
 // Event type constants - must match C code
 var EVENT_BOTTLE = 1;
 var EVENT_DIAPER = 2;
@@ -39,6 +12,22 @@ var KEY_EVENT_TIME = 1;
 var KEY_EVENT_VOLUME = 2;
 var KEY_EVENT_DIAPER_TYPE = 3;
 
+// localStorage key for the on-phone event log (newest first)
+var LOG_KEY = 'babyWatchLog';
+var LOG_MAX_ENTRIES = 1000;
+
+// Event names + timeline icons (fixed defaults; previously user-configurable)
+var EVENT_INFO = {
+  1: { name: "Bottle Feed",   icon: "system://images/DINNER_RESERVATION", emoji: "🍼" },
+  2: { name: "Diaper Change", icon: "system://images/SCHEDULED_EVENT",    emoji: "🧷" },
+  3: { name: "Sleep Started", icon: "system://images/TIDE_IS_HIGH",       emoji: "😴" },
+  4: { name: "Sleep Ended",   icon: "system://images/ALARM_CLOCK",        emoji: "☀️" }
+};
+
+function eventInfo(eventType) {
+  return EVENT_INFO[eventType] || { name: 'Unknown Event', icon: 'system://images/NOTIFICATION_FLAG', emoji: '•' };
+}
+
 // Diaper type values - must match C code (0 = not recorded)
 function diaperTypeName(type) {
   switch (type) {
@@ -46,43 +35,6 @@ function diaperTypeName(type) {
     case 2: return "Poo";
     case 3: return "Both";
     default: return null;
-  }
-}
-
-// Available icons for configuration
-var availableIcons = [
-  { id: "DINNER_RESERVATION", name: "Food/Bottle" },
-  { id: "SCHEDULED_EVENT", name: "Event" },
-  { id: "TIDE_IS_HIGH", name: "Moon/Sleep" },
-  { id: "ALARM_CLOCK", name: "Alarm/Wake" },
-  { id: "TIMELINE_CALENDAR", name: "Calendar" },
-  { id: "NOTIFICATION_FLAG", name: "Flag" },
-  { id: "GENERIC_CONFIRMATION", name: "Checkmark" },
-  { id: "BIRTHDAY_EVENT", name: "Birthday" },
-  { id: "GLUCOSE_MONITOR", name: "Health" },
-  { id: "REACHED_FITNESS_GOAL", name: "Goal" },
-  { id: "GENERIC_EMAIL", name: "Email" },
-  { id: "GENERIC_SMS", name: "Message" },
-  { id: "MUSIC_EVENT", name: "Music" },
-  { id: "PAY_BILL", name: "Bill/Task" },
-  { id: "HOCKEY_GAME", name: "Hockey" },
-  { id: "BASKETBALL", name: "Basketball" },
-  { id: "SOCCER_GAME", name: "Soccer" },
-  { id: "AMERICAN_FOOTBALL", name: "Football" }
-];
-
-function getEventConfig(eventType) {
-  switch (eventType) {
-    case EVENT_BOTTLE:
-      return { name: config.event1Name || defaultConfig.event1Name, icon: config.event1Icon || defaultConfig.event1Icon };
-    case EVENT_DIAPER:
-      return { name: config.event2Name || defaultConfig.event2Name, icon: config.event2Icon || defaultConfig.event2Icon };
-    case EVENT_SLEEP_START:
-      return { name: config.event3Name || defaultConfig.event3Name, icon: config.event3Icon || defaultConfig.event3Icon };
-    case EVENT_SLEEP_END:
-      return { name: config.event4Name || defaultConfig.event4Name, icon: config.event4Icon || defaultConfig.event4Icon };
-    default:
-      return { name: 'Unknown Event', icon: 'system://images/NOTIFICATION_FLAG' };
   }
 }
 
@@ -98,7 +50,7 @@ function formatTime(timestamp) {
 }
 
 function createEventPin(eventType, timestamp, volume, diaperType) {
-  var eventCfg = getEventConfig(eventType);
+  var info = eventInfo(eventType);
 
   var date = new Date(timestamp * 1000);
   var isoTime = date.toISOString();
@@ -108,8 +60,8 @@ function createEventPin(eventType, timestamp, volume, diaperType) {
 
   var layout = {
     "type": "genericPin",
-    "title": eventCfg.name,
-    "tinyIcon": eventCfg.icon
+    "title": info.name,
+    "tinyIcon": info.icon
   };
 
   // Bottle feeds may carry a milk volume (mL). 0 / missing means it was skipped.
@@ -138,8 +90,8 @@ function createEventPin(eventType, timestamp, volume, diaperType) {
       "time": isoTime,
       "layout": {
         "type": "genericReminder",
-        "title": eventCfg.name,
-        "tinyIcon": eventCfg.icon
+        "title": info.name,
+        "tinyIcon": info.icon
       }
     }]
   };
@@ -150,9 +102,9 @@ function createEventPin(eventType, timestamp, volume, diaperType) {
 function pushTimelinePin(eventType, timestamp, volume, diaperType) {
   var pin = createEventPin(eventType, timestamp, volume, diaperType);
   if (!pin) return;
-  
+
   console.log('Pushing timeline pin: ' + JSON.stringify(pin));
-  
+
   timeline.insertUserPin(pin, function(responseText) {
     console.log('Timeline pin result: ' + responseText);
   });
@@ -168,108 +120,224 @@ function getPayloadValue(payload, stringKey, numericKey) {
   return undefined;
 }
 
-// Generate settings page HTML
-function generateSettingsPage() {
-  var iconOptions = availableIcons.map(function(icon) {
-    return '<option value="system://images/' + icon.id + '">' + icon.name + '</option>';
-  }).join('\n');
-  
+// Append an event to the on-phone log (newest first, capped at LOG_MAX_ENTRIES).
+function saveEventToLog(type, ts, vol, diaper) {
+  var log = [];
+  try {
+    log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+  } catch (e) {
+    log = [];
+  }
+  log.unshift({ type: type, ts: ts, vol: vol || 0, diaper: diaper || 0 });
+  if (log.length > LOG_MAX_ENTRIES) {
+    log = log.slice(0, LOG_MAX_ENTRIES);
+  }
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch (e) {
+    console.log('Error saving log: ' + e);
+  }
+}
+
+// "2h 15m" / "45m" from a duration in seconds.
+function formatDuration(seconds) {
+  if (seconds < 0) seconds = 0;
+  var mins = Math.round(seconds / 60);
+  var h = Math.floor(mins / 60);
+  var m = mins % 60;
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+// Friendly day header: "Today", "Yesterday", "Tuesday, Jun 23" (+ year if old).
+function dayLabel(date) {
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var that = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  var diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  var weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var label = weekdays[date.getDay()] + ', ' + months[date.getMonth()] + ' ' + date.getDate();
+  if (date.getFullYear() !== now.getFullYear()) {
+    label += ', ' + date.getFullYear();
+  }
+  return label;
+}
+
+// Detail text for a log row (volume / diaper type / sleep duration), or ''.
+function eventDetail(ev, sortedLog, index) {
+  if (ev.type === EVENT_BOTTLE && ev.vol) {
+    return ev.vol + ' mL';
+  }
+  if (ev.type === EVENT_DIAPER) {
+    return diaperTypeName(ev.diaper) || '';
+  }
+  if (ev.type === EVENT_SLEEP_END) {
+    // Scan toward older entries for the nearest preceding sleep-start.
+    // (sortedLog is newest-first, so older entries have higher indices.)
+    for (var j = index + 1; j < sortedLog.length; j++) {
+      if (sortedLog[j].type === EVENT_SLEEP_START && sortedLog[j].ts <= ev.ts) {
+        return formatDuration(ev.ts - sortedLog[j].ts);
+      }
+    }
+  }
+  return '';
+}
+
+function pad2(n) {
+  return n < 10 ? '0' + n : '' + n;
+}
+
+// CSV-escape a field: wrap in quotes and double inner quotes only when needed.
+// Defensive — current values are numeric / fixed labels, so none need quoting.
+function csvField(value) {
+  var s = (value === null || value === undefined) ? '' : String(value);
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// Build a CSV string from the log, chronological (oldest first) for spreadsheets.
+function buildCsv(log) {
+  var rows = log.slice().sort(function(a, b) { return a.ts - b.ts; });
+  var lines = ['Date,Time,Event,Volume (mL),Diaper,Sleep Duration'];
+  for (var i = 0; i < rows.length; i++) {
+    var ev = rows[i];
+    var d = new Date(ev.ts * 1000);
+    var dateStr = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    var timeStr = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    var volume = (ev.type === EVENT_BOTTLE && ev.vol) ? ev.vol : '';
+    var diaper = (ev.type === EVENT_DIAPER) ? (diaperTypeName(ev.diaper) || '') : '';
+    var duration = '';
+    if (ev.type === EVENT_SLEEP_END) {
+      // Nearest preceding sleep-start (rows are oldest-first here).
+      for (var j = i - 1; j >= 0; j--) {
+        if (rows[j].type === EVENT_SLEEP_START && rows[j].ts <= ev.ts) {
+          duration = formatDuration(ev.ts - rows[j].ts);
+          break;
+        }
+      }
+    }
+    lines.push([
+      csvField(dateStr),
+      csvField(timeStr),
+      csvField(eventInfo(ev.type).name),
+      csvField(volume),
+      csvField(diaper),
+      csvField(duration)
+    ].join(','));
+  }
+  return lines.join('\r\n');
+}
+
+// Build the event-log page shown via the companion app's "settings" link.
+function generateLogPage() {
+  var log = [];
+  try {
+    log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+  } catch (e) {
+    log = [];
+  }
+  log.sort(function(a, b) { return b.ts - a.ts; });
+
+  var csv = buildCsv(log);
+
+  var body = '';
+  if (log.length === 0) {
+    body = '<div class="empty">No events logged yet.<br>Start tracking on your watch.</div>';
+  } else {
+    var lastDayKey = null;
+    for (var i = 0; i < log.length; i++) {
+      var ev = log[i];
+      var date = new Date(ev.ts * 1000);
+      var dayKey = date.toDateString();
+      if (dayKey !== lastDayKey) {
+        body += '<div class="day">' + dayLabel(date) + '</div>';
+        lastDayKey = dayKey;
+      }
+      var info = eventInfo(ev.type);
+      var detail = eventDetail(ev, log, i);
+      var detailHtml = detail ? '<span class="detail">' + detail + '</span>' : '';
+      body += '<div class="row">' +
+        '<span class="icon">' + info.emoji + '</span>' +
+        '<span class="rinfo"><span class="name">' + info.name + '</span>' + detailHtml + '</span>' +
+        '<span class="time">' + formatTime(ev.ts) + '</span>' +
+        '</div>';
+    }
+  }
+
   var html = '<!DOCTYPE html>\n' +
     '<html><head>\n' +
     '<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    '<title>Baby Watch Settings</title>\n' +
+    '<title>Baby Watch Log</title>\n' +
     '<style>\n' +
-    'body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; background: #1a1a2e; color: #eee; margin: 0; }\n' +
-    'h1 { color: #4cc9f0; font-size: 24px; margin-bottom: 20px; text-align: center; }\n' +
-    '.section { background: #16213e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }\n' +
-    '.section h2 { color: #4cc9f0; font-size: 16px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #0f3460; }\n' +
-    'label { display: block; color: #aaa; font-size: 12px; margin-bottom: 4px; }\n' +
-    'input, select { width: 100%; padding: 12px; border: 1px solid #0f3460; border-radius: 8px; background: #0f3460; color: #fff; font-size: 16px; margin-bottom: 12px; box-sizing: border-box; }\n' +
-    'input:focus, select:focus { outline: none; border-color: #4cc9f0; }\n' +
-    '.btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 8px; font-size: 18px; font-weight: 600; cursor: pointer; margin-top: 8px; }\n' +
-    '.btn-save { background: #4cc9f0; color: #1a1a2e; }\n' +
-    '.btn-reset { background: transparent; border: 1px solid #666; color: #aaa; }\n' +
+    'body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 16px; background: #1a1a2e; color: #eee; margin: 0; }\n' +
+    'h1 { color: #4cc9f0; font-size: 22px; margin: 4px 0 16px 0; text-align: center; }\n' +
+    '.day { color: #4cc9f0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 4px 8px 4px; }\n' +
+    '.row { display: flex; align-items: center; background: #16213e; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }\n' +
+    '.icon { font-size: 22px; margin-right: 14px; width: 26px; text-align: center; }\n' +
+    '.rinfo { display: flex; flex-direction: column; flex: 1; min-width: 0; }\n' +
+    '.name { color: #fff; font-size: 16px; }\n' +
+    '.detail { color: #4cc9f0; font-size: 13px; margin-top: 2px; }\n' +
+    '.time { color: #aaa; font-size: 14px; margin-left: 12px; white-space: nowrap; }\n' +
+    '.empty { text-align: center; color: #888; font-size: 16px; margin-top: 60px; line-height: 1.6; }\n' +
+    '.btn { display: block; width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 8px 0; box-sizing: border-box; }\n' +
+    '.btn-export { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; margin-top: 24px; }\n' +
+    '.btn-clear { background: transparent; color: #aaa; border: 1px solid #666; }\n' +
+    '#exportBox { margin: 8px 0; }\n' +
+    '#csvText { width: 100%; height: 160px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }\n' +
+    '.btn-copy { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; }\n' +
+    '.btn-download { display: block; text-align: center; padding: 14px; border-radius: 8px; border: 1px solid #4cc9f0; color: #4cc9f0; text-decoration: none; margin: 8px 0; }\n' +
+    '#copyMsg { display: block; text-align: center; color: #4cc9f0; font-size: 13px; min-height: 18px; }\n' +
     '</style>\n' +
     '</head><body>\n' +
-    '<h1>Baby Watch Settings</h1>\n' +
-    
-    '<div class="section">\n' +
-    '<h2>Event 1 (Up Button)</h2>\n' +
-    '<label>Event Name</label>\n' +
-    '<input type="text" id="event1Name" value="' + (config.event1Name || defaultConfig.event1Name) + '" placeholder="Bottle Feed">\n' +
-    '<label>Timeline Icon</label>\n' +
-    '<select id="event1Icon">' + iconOptions + '</select>\n' +
-    '</div>\n' +
-    
-    '<div class="section">\n' +
-    '<h2>Event 2 (Select Button)</h2>\n' +
-    '<label>Event Name</label>\n' +
-    '<input type="text" id="event2Name" value="' + (config.event2Name || defaultConfig.event2Name) + '" placeholder="Diaper Change">\n' +
-    '<label>Timeline Icon</label>\n' +
-    '<select id="event2Icon">' + iconOptions + '</select>\n' +
-    '</div>\n' +
-    
-    '<div class="section">\n' +
-    '<h2>Event 3 (Down Button - Start)</h2>\n' +
-    '<label>Event Name</label>\n' +
-    '<input type="text" id="event3Name" value="' + (config.event3Name || defaultConfig.event3Name) + '" placeholder="Sleep Started">\n' +
-    '<label>Timeline Icon</label>\n' +
-    '<select id="event3Icon">' + iconOptions + '</select>\n' +
-    '</div>\n' +
-    
-    '<div class="section">\n' +
-    '<h2>Event 4 (Down Button - End)</h2>\n' +
-    '<label>Event Name</label>\n' +
-    '<input type="text" id="event4Name" value="' + (config.event4Name || defaultConfig.event4Name) + '" placeholder="Sleep Ended">\n' +
-    '<label>Timeline Icon</label>\n' +
-    '<select id="event4Icon">' + iconOptions + '</select>\n' +
-    '</div>\n' +
-    
-    '<button class="btn btn-save" onclick="saveSettings()">Save Settings</button>\n' +
-    '<button class="btn btn-reset" onclick="resetDefaults()">Reset to Defaults</button>\n' +
-    
+    '<h1>Baby Watch Log</h1>\n' +
+    body + '\n' +
+    (log.length > 0 ?
+      '<button class="btn btn-export" onclick="showExport()">Export CSV</button>\n' +
+      '<div id="exportBox" style="display:none">\n' +
+      '<textarea id="csvText" readonly></textarea>\n' +
+      '<button class="btn btn-copy" onclick="copyCsv()">Copy to clipboard</button>\n' +
+      '<a id="csvDownload" class="btn-download" download="baby-log.csv">Download .csv file</a>\n' +
+      '<span id="copyMsg"></span>\n' +
+      '</div>\n' +
+      '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n'
+      : '') +
     '<script>\n' +
-    'function setSelectValue(id, value) { var s = document.getElementById(id); for(var i=0; i<s.options.length; i++) { if(s.options[i].value === value) { s.selectedIndex = i; break; } } }\n' +
-    'setSelectValue("event1Icon", "' + (config.event1Icon || defaultConfig.event1Icon) + '");\n' +
-    'setSelectValue("event2Icon", "' + (config.event2Icon || defaultConfig.event2Icon) + '");\n' +
-    'setSelectValue("event3Icon", "' + (config.event3Icon || defaultConfig.event3Icon) + '");\n' +
-    'setSelectValue("event4Icon", "' + (config.event4Icon || defaultConfig.event4Icon) + '");\n' +
-    'function saveSettings() {\n' +
-    '  var cfg = {\n' +
-    '    event1Name: document.getElementById("event1Name").value,\n' +
-    '    event1Icon: document.getElementById("event1Icon").value,\n' +
-    '    event2Name: document.getElementById("event2Name").value,\n' +
-    '    event2Icon: document.getElementById("event2Icon").value,\n' +
-    '    event3Name: document.getElementById("event3Name").value,\n' +
-    '    event3Icon: document.getElementById("event3Icon").value,\n' +
-    '    event4Name: document.getElementById("event4Name").value,\n' +
-    '    event4Icon: document.getElementById("event4Icon").value\n' +
-    '  };\n' +
-    '  var result = encodeURIComponent(JSON.stringify(cfg));\n' +
-    '  window.location.href = "pebblejs://close#" + result;\n' +
+    'var CSV_DATA = ' + JSON.stringify(csv) + ';\n' +
+    'function showExport() {\n' +
+    '  document.getElementById("csvText").value = CSV_DATA;\n' +
+    '  document.getElementById("csvDownload").href = "data:text/csv;charset=utf-8," + encodeURIComponent(CSV_DATA);\n' +
+    '  document.getElementById("exportBox").style.display = "block";\n' +
     '}\n' +
-    'function resetDefaults() {\n' +
-    '  document.getElementById("event1Name").value = "Bottle Feed";\n' +
-    '  document.getElementById("event2Name").value = "Diaper Change";\n' +
-    '  document.getElementById("event3Name").value = "Sleep Started";\n' +
-    '  document.getElementById("event4Name").value = "Sleep Ended";\n' +
-    '  setSelectValue("event1Icon", "system://images/DINNER_RESERVATION");\n' +
-    '  setSelectValue("event2Icon", "system://images/SCHEDULED_EVENT");\n' +
-    '  setSelectValue("event3Icon", "system://images/TIDE_IS_HIGH");\n' +
-    '  setSelectValue("event4Icon", "system://images/ALARM_CLOCK");\n' +
+    'function copyCsv() {\n' +
+    '  var t = document.getElementById("csvText");\n' +
+    '  t.focus();\n' +
+    '  t.select();\n' +
+    '  t.setSelectionRange(0, CSV_DATA.length);\n' +
+    '  var ok = false;\n' +
+    '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
+    '  document.getElementById("copyMsg").textContent = ok ? "Copied to clipboard!" : "Select the text above and copy manually.";\n' +
+    '}\n' +
+    'function clearLog() {\n' +
+    '  if (confirm("Clear all logged events? This cannot be undone.")) {\n' +
+    '    window.location.href = "pebblejs://close#" + encodeURIComponent(JSON.stringify({ action: "clearLog" }));\n' +
+    '  }\n' +
     '}\n' +
     '</script>\n' +
     '</body></html>';
-  
+
   return html;
 }
 
 Pebble.addEventListener('ready', function() {
-  console.log('=== BABY WATCH JS READY ===');
+  console.log('=== BABY WATCH JS READY (v2.0) ===');
   console.log('Timeline: Rebble API');
-  console.log('Config: ' + JSON.stringify(config));
-  
+
   Pebble.getTimelineToken(function(token) {
     console.log('Timeline token OK: ' + token.substring(0, 15) + '...');
   }, function(error) {
@@ -278,28 +346,28 @@ Pebble.addEventListener('ready', function() {
 });
 
 Pebble.addEventListener('showConfiguration', function() {
-  var html = generateSettingsPage();
+  var html = generateLogPage();
   var dataUri = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
   Pebble.openURL(dataUri);
 });
 
 Pebble.addEventListener('webviewclosed', function(e) {
-  if (e && e.response) {
-    try {
-      var newConfig = JSON.parse(decodeURIComponent(e.response));
-      config = newConfig;
-      localStorage.setItem('babyWatchConfig', JSON.stringify(config));
-      console.log('Settings saved: ' + JSON.stringify(config));
-    } catch (err) {
-      console.log('Error parsing config: ' + err);
+  if (!e || !e.response) return;
+  try {
+    var data = JSON.parse(decodeURIComponent(e.response));
+    if (data && data.action === 'clearLog') {
+      localStorage.removeItem(LOG_KEY);
+      console.log('Event log cleared');
     }
+  } catch (err) {
+    console.log('Error parsing webview response: ' + err);
   }
 });
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log('=== APPMESSAGE RECEIVED ===');
   console.log('Payload: ' + JSON.stringify(e.payload));
-  
+
   var eventType = getPayloadValue(e.payload, 'EVENT_TYPE', KEY_EVENT_TYPE);
   var timestamp = getPayloadValue(e.payload, 'EVENT_TIME', KEY_EVENT_TIME);
   var volume = getPayloadValue(e.payload, 'EVENT_VOLUME', KEY_EVENT_VOLUME);
@@ -309,8 +377,8 @@ Pebble.addEventListener('appmessage', function(e) {
 
   if (eventType !== undefined && timestamp !== undefined) {
     pushTimelinePin(eventType, timestamp, volume, diaperType);
+    saveEventToLog(eventType, timestamp, volume, diaperType);
   } else {
     console.log('ERROR: Missing data. Keys: ' + Object.keys(e.payload).join(', '));
   }
 });
-

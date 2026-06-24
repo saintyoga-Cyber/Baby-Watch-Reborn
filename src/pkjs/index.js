@@ -186,6 +186,53 @@ function eventDetail(ev, sortedLog, index) {
   return '';
 }
 
+function pad2(n) {
+  return n < 10 ? '0' + n : '' + n;
+}
+
+// CSV-escape a field: wrap in quotes and double inner quotes only when needed.
+// Defensive — current values are numeric / fixed labels, so none need quoting.
+function csvField(value) {
+  var s = (value === null || value === undefined) ? '' : String(value);
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// Build a CSV string from the log, chronological (oldest first) for spreadsheets.
+function buildCsv(log) {
+  var rows = log.slice().sort(function(a, b) { return a.ts - b.ts; });
+  var lines = ['Date,Time,Event,Volume (mL),Diaper,Sleep Duration'];
+  for (var i = 0; i < rows.length; i++) {
+    var ev = rows[i];
+    var d = new Date(ev.ts * 1000);
+    var dateStr = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    var timeStr = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    var volume = (ev.type === EVENT_BOTTLE && ev.vol) ? ev.vol : '';
+    var diaper = (ev.type === EVENT_DIAPER) ? (diaperTypeName(ev.diaper) || '') : '';
+    var duration = '';
+    if (ev.type === EVENT_SLEEP_END) {
+      // Nearest preceding sleep-start (rows are oldest-first here).
+      for (var j = i - 1; j >= 0; j--) {
+        if (rows[j].type === EVENT_SLEEP_START && rows[j].ts <= ev.ts) {
+          duration = formatDuration(ev.ts - rows[j].ts);
+          break;
+        }
+      }
+    }
+    lines.push([
+      csvField(dateStr),
+      csvField(timeStr),
+      csvField(eventInfo(ev.type).name),
+      csvField(volume),
+      csvField(diaper),
+      csvField(duration)
+    ].join(','));
+  }
+  return lines.join('\r\n');
+}
+
 // Build the event-log page shown via the companion app's "settings" link.
 function generateLogPage() {
   var log = [];
@@ -195,6 +242,8 @@ function generateLogPage() {
     log = [];
   }
   log.sort(function(a, b) { return b.ts - a.ts; });
+
+  var csv = buildCsv(log);
 
   var body = '';
   if (log.length === 0) {
@@ -236,13 +285,44 @@ function generateLogPage() {
     '.detail { color: #4cc9f0; font-size: 13px; margin-top: 2px; }\n' +
     '.time { color: #aaa; font-size: 14px; margin-left: 12px; white-space: nowrap; }\n' +
     '.empty { text-align: center; color: #888; font-size: 16px; margin-top: 60px; line-height: 1.6; }\n' +
-    '.btn-clear { display: block; width: 100%; padding: 14px; border: 1px solid #666; border-radius: 8px; background: transparent; color: #aaa; font-size: 16px; cursor: pointer; margin: 24px 0 8px 0; box-sizing: border-box; }\n' +
+    '.btn { display: block; width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 8px 0; box-sizing: border-box; }\n' +
+    '.btn-export { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; margin-top: 24px; }\n' +
+    '.btn-clear { background: transparent; color: #aaa; border: 1px solid #666; }\n' +
+    '#exportBox { margin: 8px 0; }\n' +
+    '#csvText { width: 100%; height: 160px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }\n' +
+    '.btn-copy { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; }\n' +
+    '.btn-download { display: block; text-align: center; padding: 14px; border-radius: 8px; border: 1px solid #4cc9f0; color: #4cc9f0; text-decoration: none; margin: 8px 0; }\n' +
+    '#copyMsg { display: block; text-align: center; color: #4cc9f0; font-size: 13px; min-height: 18px; }\n' +
     '</style>\n' +
     '</head><body>\n' +
     '<h1>Baby Watch Log</h1>\n' +
     body + '\n' +
-    (log.length > 0 ? '<button class="btn-clear" onclick="clearLog()">Clear Log</button>\n' : '') +
+    (log.length > 0 ?
+      '<button class="btn btn-export" onclick="showExport()">Export CSV</button>\n' +
+      '<div id="exportBox" style="display:none">\n' +
+      '<textarea id="csvText" readonly></textarea>\n' +
+      '<button class="btn btn-copy" onclick="copyCsv()">Copy to clipboard</button>\n' +
+      '<a id="csvDownload" class="btn-download" download="baby-log.csv">Download .csv file</a>\n' +
+      '<span id="copyMsg"></span>\n' +
+      '</div>\n' +
+      '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n'
+      : '') +
     '<script>\n' +
+    'var CSV_DATA = ' + JSON.stringify(csv) + ';\n' +
+    'function showExport() {\n' +
+    '  document.getElementById("csvText").value = CSV_DATA;\n' +
+    '  document.getElementById("csvDownload").href = "data:text/csv;charset=utf-8," + encodeURIComponent(CSV_DATA);\n' +
+    '  document.getElementById("exportBox").style.display = "block";\n' +
+    '}\n' +
+    'function copyCsv() {\n' +
+    '  var t = document.getElementById("csvText");\n' +
+    '  t.focus();\n' +
+    '  t.select();\n' +
+    '  t.setSelectionRange(0, CSV_DATA.length);\n' +
+    '  var ok = false;\n' +
+    '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
+    '  document.getElementById("copyMsg").textContent = ok ? "Copied to clipboard!" : "Select the text above and copy manually.";\n' +
+    '}\n' +
     'function clearLog() {\n' +
     '  if (confirm("Clear all logged events? This cannot be undone.")) {\n' +
     '    window.location.href = "pebblejs://close#" + encodeURIComponent(JSON.stringify({ action: "clearLog" }));\n' +

@@ -20,6 +20,24 @@
 #define EVENT_SLEEP_START 3
 #define EVENT_SLEEP_END 4
 
+/***** Offset Picker (long-press: log an event in the past) *****/
+#define CATEGORY_BOTTLE 1
+#define CATEGORY_DIAPER 2
+#define CATEGORY_SLEEP 3
+#define OFFSET_STEP_MIN 15
+#define OFFSET_MAX_MIN 720
+
+/***** Volume Picker (bottle feed: log milk volume) *****/
+#define VOLUME_STEP_ML 60
+#define VOLUME_MIN_ML 0
+#define VOLUME_MAX_ML 600
+#define VOLUME_DEFAULT_ML 120
+
+/***** Diaper Type Picker (pee / poo / both; 0 = skipped/not recorded) *****/
+#define DIAPER_PEE 1
+#define DIAPER_POO 2
+#define DIAPER_BOTH 3
+
 
 /***** Variables *****/
 
@@ -64,6 +82,31 @@ static time_t bottleStart = 0;
 static time_t diaperStart = 0;
 static time_t sleepStart = 0;
 static time_t sleepEnd = 0;
+
+// Offset picker (long-press: log in the past)
+static Window *pickerWindow = NULL;
+static TextLayer *pickerTitleLayer;
+static TextLayer *pickerOffsetLayer;
+static int pendingCategory = CATEGORY_BOTTLE;
+static int pendingOffsetMin = 0;
+static char pickerTitleText[12];
+static char pickerOffsetText[40];
+
+// Volume picker (bottle feed: milk volume in mL; 0 = skipped/not recorded)
+static Window *volumeWindow = NULL;
+static TextLayer *volumeTitleLayer;
+static TextLayer *volumeValueLayer;
+static int pendingVolumeMl = VOLUME_DEFAULT_ML;
+static time_t pendingBottleTime = 0;
+static char volumeValueText[16];
+
+// Diaper type picker (pee / poo / both; 0 = skipped/not recorded)
+static Window *diaperWindow = NULL;
+static TextLayer *diaperPickTitleLayer;
+static TextLayer *diaperPickValueLayer;
+static int pendingDiaperType = DIAPER_PEE;
+static time_t pendingDiaperTime = 0;
+static char diaperValueText[8];
 
 
 /***** Background Layer Draw Callbacks *****/
@@ -140,9 +183,7 @@ static void setTimeRangeText(time_t startTimestamp, time_t endTimestamp, char *t
       strcpy(sleepEndStr, "...");
     }
 
-    strncpy(text, sleepStartStr, sizeof(sleepStartStr));
-    strncat(text, " - ", 4);
-    strncat(text, sleepEndStr, sizeof(sleepEndStr));
+    snprintf(text, 14, "%s - %s", sleepStartStr, sleepEndStr);
   }
 
   text_layer_set_text(textLayer, text);
@@ -159,46 +200,48 @@ void sendToPhone(int key, time_t message) {
   app_message_outbox_send();
 }
 
-void sendTimelineEvent(int eventType, time_t timestamp) {
+// Forward declarations: bottle/diaper logging open their pickers, which live
+// further down with the other picker code.
+static void show_volume_picker(void);
+static void show_diaper_picker(void);
+
+void sendTimelineEvent(int eventType, time_t timestamp, int volumeMl, int diaperType) {
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TYPE, eventType);
   dict_write_int32(iter, MESSAGE_KEY_EVENT_TIME, (int32_t)timestamp);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_VOLUME, volumeMl);
+  dict_write_int32(iter, MESSAGE_KEY_EVENT_DIAPER_TYPE, diaperType);
   app_message_outbox_send();
-  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld", eventType, timestamp);
+  app_log(APP_LOG_LEVEL_DEBUG, "pebby.c", 160, "Timeline event sent: type=%d, time=%ld, volume=%d, diaper=%d", eventType, timestamp, volumeMl, diaperType);
 }
 
-void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  ButtonId bt = click_recognizer_get_button_id(recognizer);
-  char *targetText = timeTextUp;
-  TextLayer *targetLayer = bottleTextLayer;
-  int persistKey = PERSIST_BOTTLE;
-  int eventType = EVENT_BOTTLE;
+// Timestamp-driven logging helpers, reused by both tap (now) and the
+// offset picker (back-dated). The timestamp is supplied by the caller.
 
-  time_t t = time(NULL);
-
-  if (bt == BUTTON_ID_SELECT) {
-    targetText = timeTextMiddle;
-    targetLayer = diaperTextLayer;
-    persistKey = PERSIST_DIAPER;
-    eventType = EVENT_DIAPER;
-    diaperStart = t;
-    setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
-  } else {
-    bottleStart = t;
-    setTimeSinceText(bottleStart, timeSinceTextUp, bottleSinceTextLayer);
-  }
-
-  setTimeText(t, targetText, targetLayer);
-
-  persist_write_int(persistKey, t);
-
-  sendTimelineEvent(eventType, t);
+static void logBottle(time_t t) {
+  bottleStart = t;
+  setTimeText(t, timeTextUp, bottleTextLayer);
+  setTimeSinceText(bottleStart, timeSinceTextUp, bottleSinceTextLayer);
+  persist_write_int(PERSIST_BOTTLE, t);
+  // The timeline event is sent from the volume picker (after a volume is
+  // chosen, or skipped via BACK), so the volume can be attached to the pin.
+  pendingBottleTime = t;
+  show_volume_picker();
 }
 
-void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  time_t t = time(NULL);
+static void logDiaper(time_t t) {
+  diaperStart = t;
+  setTimeText(t, timeTextMiddle, diaperTextLayer);
+  setTimeSinceText(diaperStart, timeSinceTextMiddle, diaperSinceTextLayer);
+  persist_write_int(PERSIST_DIAPER, t);
+  // The timeline event is sent from the diaper-type picker (after pee/poo/both
+  // is chosen, or skipped via BACK), so the type can be attached to the pin.
+  pendingDiaperTime = t;
+  show_diaper_picker();
+}
 
+static void toggleSleep(time_t t) {
   if (sleeping == 0) {
     sleeping = 1;
     sleepStart = t;
@@ -207,18 +250,324 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
     persist_write_int(PERSIST_MOON_START, sleepStart);
     persist_write_int(PERSIST_MOON_END, 0);
 
-    sendTimelineEvent(EVENT_SLEEP_START, t);
+    sendTimelineEvent(EVENT_SLEEP_START, t, 0, 0);
   } else {
     sleeping = 0;
     sleepEnd = t;
 
     persist_write_int(PERSIST_MOON_END, sleepEnd);
 
-    sendTimelineEvent(EVENT_SLEEP_END, t);
+    sendTimelineEvent(EVENT_SLEEP_END, t, 0, 0);
   }
 
   setTimeRangeText(sleepStart, sleepEnd, timeTextDown, moonTextLayer);
   setTimeSinceText(MAX(sleepStart, sleepEnd), timeSinceTextDown, moonSinceTextLayer);
+}
+
+void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
+  ButtonId bt = click_recognizer_get_button_id(recognizer);
+  time_t t = time(NULL);
+
+  if (bt == BUTTON_ID_SELECT) {
+    logDiaper(t);
+  } else {
+    logBottle(t);
+  }
+}
+
+void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
+  toggleSleep(time(NULL));
+}
+
+
+/***** Offset Picker Window (long-press to log in the past) *****/
+
+static void updatePickerLabel(void) {
+  const char *name = "Bottle";
+  if (pendingCategory == CATEGORY_DIAPER) {
+    name = "Diaper";
+  } else if (pendingCategory == CATEGORY_SLEEP) {
+    name = "Sleep";
+  }
+  snprintf(pickerTitleText, sizeof(pickerTitleText), "%s", name);
+  text_layer_set_text(pickerTitleLayer, pickerTitleText);
+
+  if (pendingOffsetMin == 0) {
+    snprintf(pickerOffsetText, sizeof(pickerOffsetText), "now");
+  } else if (pendingOffsetMin < 60) {
+    snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d min ago", pendingOffsetMin);
+  } else {
+    int hours = pendingOffsetMin / 60;
+    int minutes = pendingOffsetMin % 60;
+    if (minutes == 0) {
+      snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d h ago", hours);
+    } else {
+      snprintf(pickerOffsetText, sizeof(pickerOffsetText), "%d h %d min ago", hours, minutes);
+    }
+  }
+  text_layer_set_text(pickerOffsetLayer, pickerOffsetText);
+}
+
+static void picker_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingOffsetMin += OFFSET_STEP_MIN;
+  if (pendingOffsetMin > OFFSET_MAX_MIN) {
+    pendingOffsetMin = OFFSET_MAX_MIN;
+  }
+  updatePickerLabel();
+}
+
+static void picker_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingOffsetMin -= OFFSET_STEP_MIN;
+  if (pendingOffsetMin < 0) {
+    pendingOffsetMin = 0;
+  }
+  updatePickerLabel();
+}
+
+static void picker_select_handler(ClickRecognizerRef recognizer, void *context) {
+  time_t t = time(NULL) - (time_t) pendingOffsetMin * 60;
+
+  // Close the offset picker first so that, for a bottle, the volume picker
+  // opened by logBottle() lands cleanly on top of the main window.
+  window_stack_pop(true);
+
+  switch (pendingCategory) {
+    case CATEGORY_DIAPER:
+      logDiaper(t);
+      break;
+    case CATEGORY_SLEEP:
+      toggleSleep(t);
+      break;
+    default:
+      logBottle(t);
+      break;
+  }
+}
+
+static void picker_config_provider(void *context) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 150, picker_up_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 150, picker_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, picker_select_handler);
+}
+
+static void picker_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  pickerTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(pickerTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(pickerTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  layer_add_child(root, text_layer_get_layer(pickerTitleLayer));
+
+  pickerOffsetLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(pickerOffsetLayer, GTextAlignmentCenter);
+  text_layer_set_font(pickerOffsetLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(pickerOffsetLayer));
+
+  updatePickerLabel();
+}
+
+static void picker_window_unload(Window *win) {
+  text_layer_destroy(pickerTitleLayer);
+  text_layer_destroy(pickerOffsetLayer);
+}
+
+static void show_picker(int category) {
+  pendingCategory = category;
+  pendingOffsetMin = 0;
+
+  if (!pickerWindow) {
+    pickerWindow = window_create();
+    window_set_window_handlers(pickerWindow, (WindowHandlers) {
+      .load = picker_window_load,
+      .unload = picker_window_unload
+    });
+    window_set_click_config_provider(pickerWindow, (ClickConfigProvider) picker_config_provider);
+  }
+
+  window_stack_push(pickerWindow, true);
+}
+
+void bottle_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_BOTTLE);
+}
+
+void diaper_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_DIAPER);
+}
+
+void sleep_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  show_picker(CATEGORY_SLEEP);
+}
+
+
+/***** Volume Picker Window (bottle feed: log milk volume) *****/
+
+static void updateVolumeLabel(void) {
+  if (pendingVolumeMl <= 0) {
+    snprintf(volumeValueText, sizeof(volumeValueText), "Skip");
+  } else {
+    snprintf(volumeValueText, sizeof(volumeValueText), "%d mL", pendingVolumeMl);
+  }
+  text_layer_set_text(volumeValueLayer, volumeValueText);
+}
+
+static void volume_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingVolumeMl += VOLUME_STEP_ML;
+  if (pendingVolumeMl > VOLUME_MAX_ML) {
+    pendingVolumeMl = VOLUME_MAX_ML;
+  }
+  updateVolumeLabel();
+}
+
+static void volume_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingVolumeMl -= VOLUME_STEP_ML;
+  if (pendingVolumeMl < VOLUME_MIN_ML) {
+    pendingVolumeMl = VOLUME_MIN_ML;
+  }
+  updateVolumeLabel();
+}
+
+static void volume_select_handler(ClickRecognizerRef recognizer, void *context) {
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, pendingVolumeMl, 0);
+  window_stack_pop(true);
+}
+
+static void volume_back_handler(ClickRecognizerRef recognizer, void *context) {
+  // Skip the volume: still log the feed, just without a recorded amount.
+  sendTimelineEvent(EVENT_BOTTLE, pendingBottleTime, 0, 0);
+  window_stack_pop(true);
+}
+
+static void volume_config_provider(void *context) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 150, volume_up_handler);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 150, volume_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, volume_select_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, volume_back_handler);
+}
+
+static void volume_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  volumeTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(volumeTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(volumeTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_text(volumeTitleLayer, "Milk");
+  layer_add_child(root, text_layer_get_layer(volumeTitleLayer));
+
+  volumeValueLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(volumeValueLayer, GTextAlignmentCenter);
+  text_layer_set_font(volumeValueLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(volumeValueLayer));
+
+  updateVolumeLabel();
+}
+
+static void volume_window_unload(Window *win) {
+  text_layer_destroy(volumeTitleLayer);
+  text_layer_destroy(volumeValueLayer);
+}
+
+static void show_volume_picker(void) {
+  pendingVolumeMl = VOLUME_DEFAULT_ML;
+
+  if (!volumeWindow) {
+    volumeWindow = window_create();
+    window_set_window_handlers(volumeWindow, (WindowHandlers) {
+      .load = volume_window_load,
+      .unload = volume_window_unload
+    });
+    window_set_click_config_provider(volumeWindow, (ClickConfigProvider) volume_config_provider);
+  }
+
+  window_stack_push(volumeWindow, true);
+}
+
+
+/***** Diaper Type Picker Window (pee / poo / both) *****/
+
+static void updateDiaperLabel(void) {
+  const char *label = "Pee";
+  if (pendingDiaperType == DIAPER_POO) {
+    label = "Poo";
+  } else if (pendingDiaperType == DIAPER_BOTH) {
+    label = "Both";
+  }
+  snprintf(diaperValueText, sizeof(diaperValueText), "%s", label);
+  text_layer_set_text(diaperPickValueLayer, diaperValueText);
+}
+
+static void diaper_up_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingDiaperType += 1;
+  if (pendingDiaperType > DIAPER_BOTH) {
+    pendingDiaperType = DIAPER_PEE;   // wrap around
+  }
+  updateDiaperLabel();
+}
+
+static void diaper_down_handler(ClickRecognizerRef recognizer, void *context) {
+  pendingDiaperType -= 1;
+  if (pendingDiaperType < DIAPER_PEE) {
+    pendingDiaperType = DIAPER_BOTH;  // wrap around
+  }
+  updateDiaperLabel();
+}
+
+static void diaper_select_handler(ClickRecognizerRef recognizer, void *context) {
+  sendTimelineEvent(EVENT_DIAPER, pendingDiaperTime, 0, pendingDiaperType);
+  window_stack_pop(true);
+}
+
+static void diaper_back_handler(ClickRecognizerRef recognizer, void *context) {
+  // Skip the type: still log the change, just without a recorded type.
+  sendTimelineEvent(EVENT_DIAPER, pendingDiaperTime, 0, 0);
+  window_stack_pop(true);
+}
+
+static void diaper_config_provider(void *context) {
+  window_single_click_subscribe(BUTTON_ID_UP, diaper_up_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, diaper_down_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, diaper_select_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, diaper_back_handler);
+}
+
+static void diaper_window_load(Window *win) {
+  Layer *root = window_get_root_layer(win);
+  GRect bounds = layer_get_bounds(root);
+
+  diaperPickTitleLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 46}, .size = {bounds.size.w, 34} });
+  text_layer_set_text_alignment(diaperPickTitleLayer, GTextAlignmentCenter);
+  text_layer_set_font(diaperPickTitleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_text(diaperPickTitleLayer, "Diaper");
+  layer_add_child(root, text_layer_get_layer(diaperPickTitleLayer));
+
+  diaperPickValueLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h / 2 - 6}, .size = {bounds.size.w, 44} });
+  text_layer_set_text_alignment(diaperPickValueLayer, GTextAlignmentCenter);
+  text_layer_set_font(diaperPickValueLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(diaperPickValueLayer));
+
+  updateDiaperLabel();
+}
+
+static void diaper_window_unload(Window *win) {
+  text_layer_destroy(diaperPickTitleLayer);
+  text_layer_destroy(diaperPickValueLayer);
+}
+
+static void show_diaper_picker(void) {
+  pendingDiaperType = DIAPER_PEE;
+
+  if (!diaperWindow) {
+    diaperWindow = window_create();
+    window_set_window_handlers(diaperWindow, (WindowHandlers) {
+      .load = diaper_window_load,
+      .unload = diaper_window_unload
+    });
+    window_set_click_config_provider(diaperWindow, (ClickConfigProvider) diaper_config_provider);
+  }
+
+  window_stack_push(diaperWindow, true);
 }
 
 
@@ -226,6 +575,10 @@ void config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_single_click_handler);
   window_single_click_subscribe(BUTTON_ID_SELECT, up_single_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_single_click_handler);
+
+  window_long_click_subscribe(BUTTON_ID_UP, 0, bottle_long_click_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 0, diaper_long_click_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_DOWN, 0, sleep_long_click_handler, NULL);
 }
 
 void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
@@ -308,24 +661,60 @@ static void window_load(Window *window) {
   int contentWidth = bounds.size.w - ACTION_BAR_WIDTH;
   int rowHeight = bounds.size.h / 3;
 
+  // ----- Layout parameters (rectangular defaults: aplite/basalt/diorite/emery) -----
+  // Background bands {origin.y, height} for bottle, diaper, moon rows.
+  int bandY[3] = { 0, rowHeight, rowHeight * 2 };
+  int bandH[3] = { rowHeight, rowHeight, rowHeight + 6 };
+  // Per-row text Y for the time line and the "since" line.
+  int timeY[3]  = { bounds.size.h/3/2 - 20, bounds.size.h/2 - 20, 5*bounds.size.h/3/2 - 20 };
+  int sinceY[3] = { bounds.size.h/3/2 + 2,  bounds.size.h/2 + 2,  5*bounds.size.h/3/2 + 2 };
+  int textX = 0;
+  int textW = contentWidth;
+  int bandW = contentWidth;
+  // Sleep range ("HH:MM - HH:MM") font; shrunk on round so it never truncates.
+  const char *moonTimeFont = FONT_KEY_GOTHIC_24_BOLD;
+  // Focused middle (diaper) row font; enlarged on round.
+  const char *diaperTimeFont = FONT_KEY_GOTHIC_24_BOLD;
+
+#if defined(PBL_ROUND)
+  // Centered-focus layout for the 180x180 circular display. Bands span the
+  // full width so they tuck under the black action bar's curved edge (no
+  // gap). Text is centered in the visible colored area and kept near each
+  // band's vertical centre, away from the narrow top/bottom arcs where it
+  // would otherwise clip.
+  int fullH = bounds.size.h + 6;   // restore the true 180px height
+
+  bandW = bounds.size.w;
+  bandY[0] = 0;     bandH[0] = 42;            // smaller top (bottle) band
+  bandY[1] = 42;    bandH[1] = 78;            // emphasized middle (diaper) band
+  bandY[2] = 120;   bandH[2] = fullH - 120;   // roomy bottom (sleep) band
+
+  timeY[0]  = 6;    sinceY[0]  = 26;
+  timeY[1]  = 56;   sinceY[1]  = 88;
+  timeY[2]  = 126;  sinceY[2]  = 150;
+
+  moonTimeFont = FONT_KEY_GOTHIC_18_BOLD;       // fits "HH:MM - HH:MM" on the narrow circle
+  diaperTimeFont = FONT_KEY_GOTHIC_28_BOLD;     // emphasize the focused middle row
+#endif
+
   // Create colored background layers (only on color devices)
   #ifdef PBL_COLOR
-  bottleBgLayer = layer_create((GRect){ .origin = {0, 0}, .size = {contentWidth, rowHeight} });
+  bottleBgLayer = layer_create((GRect){ .origin = {0, bandY[0]}, .size = {bandW, bandH[0]} });
   layer_set_update_proc(bottleBgLayer, bottle_bg_update_proc);
   layer_add_child(window_layer, bottleBgLayer);
 
-  diaperBgLayer = layer_create((GRect){ .origin = {0, rowHeight}, .size = {contentWidth, rowHeight} });
+  diaperBgLayer = layer_create((GRect){ .origin = {0, bandY[1]}, .size = {bandW, bandH[1]} });
   layer_set_update_proc(diaperBgLayer, diaper_bg_update_proc);
   layer_add_child(window_layer, diaperBgLayer);
 
-  moonBgLayer = layer_create((GRect){ .origin = {0, rowHeight * 2}, .size = {contentWidth, rowHeight + 6} });
+  moonBgLayer = layer_create((GRect){ .origin = {0, bandY[2]}, .size = {bandW, bandH[2]} });
   layer_set_update_proc(moonBgLayer, moon_bg_update_proc);
   layer_add_child(window_layer, moonBgLayer);
   #endif
 
-  // Text layers - using original positioning from Pebby
+  // Text layers
 
-  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
+  bottleSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[0] }, .size = {textW, 24} });
   text_layer_set_text_alignment(bottleSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(bottleSinceTextLayer, "");
   text_layer_set_font(bottleSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
@@ -335,7 +724,7 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(bottleSinceTextLayer));
 
-  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 + 2 }, .size = {contentWidth, 24} });
+  diaperSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[1] }, .size = {textW, 24} });
   text_layer_set_font(diaperSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(diaperSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(diaperSinceTextLayer, "");
@@ -345,7 +734,7 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(diaperSinceTextLayer));
 
-  moonSinceTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 + 2 }, .size = {contentWidth, 24} });
+  moonSinceTextLayer = text_layer_create((GRect){ .origin = {textX, sinceY[2] }, .size = {textW, 24} });
   text_layer_set_font(moonSinceTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(moonSinceTextLayer, GTextAlignmentCenter);
   text_layer_set_text(moonSinceTextLayer, "");
@@ -356,7 +745,7 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, text_layer_get_layer(moonSinceTextLayer));
 
 
-  bottleTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
+  bottleTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[0] }, .size = {textW, 24} });
   text_layer_set_text_alignment(bottleTextLayer, GTextAlignmentCenter);
   text_layer_set_text(bottleTextLayer, "");
   text_layer_set_font(bottleTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
@@ -366,8 +755,8 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(bottleTextLayer));
 
-  diaperTextLayer = text_layer_create((GRect){ .origin = {0, bounds.size.h/2 - 20 }, .size = {contentWidth, 24} });
-  text_layer_set_font(diaperTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  diaperTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[1] }, .size = {textW, 30} });
+  text_layer_set_font(diaperTextLayer, fonts_get_system_font(diaperTimeFont));
   text_layer_set_text_alignment(diaperTextLayer, GTextAlignmentCenter);
   text_layer_set_text(diaperTextLayer, "");
   #ifdef PBL_COLOR
@@ -376,8 +765,8 @@ static void window_load(Window *window) {
   #endif
   layer_add_child(window_layer, text_layer_get_layer(diaperTextLayer));
 
-  moonTextLayer = text_layer_create((GRect){ .origin = {0, 5*bounds.size.h/3/2 - 20 }, .size = {contentWidth, 24} });
-  text_layer_set_font(moonTextLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  moonTextLayer = text_layer_create((GRect){ .origin = {textX, timeY[2] }, .size = {textW, 24} });
+  text_layer_set_font(moonTextLayer, fonts_get_system_font(moonTimeFont));
   text_layer_set_text_alignment(moonTextLayer, GTextAlignmentCenter);
   text_layer_set_text(moonTextLayer, "");
   #ifdef PBL_COLOR
@@ -474,6 +863,15 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  if (pickerWindow) {
+    window_destroy(pickerWindow);
+  }
+  if (volumeWindow) {
+    window_destroy(volumeWindow);
+  }
+  if (diaperWindow) {
+    window_destroy(diaperWindow);
+  }
   window_destroy(window);
 }
 

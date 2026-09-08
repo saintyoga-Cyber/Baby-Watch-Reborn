@@ -16,6 +16,10 @@ var KEY_EVENT_DIAPER_TYPE = 3;
 var LOG_KEY = 'babyWatchLog';
 var LOG_MAX_ENTRIES = 1000;
 
+// Base URL of the shared-log viewer (docs/log.html on GitHub Pages).
+// PERSONAL BUILD ONLY - this share feature is not in the Pebble store build.
+var SHARE_BASE_URL = 'https://saintyoga-cyber.github.io/baby-watch-reborn/log.html';
+
 // Event names + timeline icons (fixed defaults; previously user-configurable)
 var EVENT_INFO = {
   1: { name: "Bottle Feed",   icon: "system://images/DINNER_RESERVATION", emoji: "🍼" },
@@ -233,6 +237,35 @@ function buildCsv(log) {
   return lines.join('\r\n');
 }
 
+// Encode the log compactly for a share-link fragment:
+//   "1.<baseTs36>.<type-deltaTs-vol-diaper>_<...>"
+// Timestamps are stored as base-36 deltas and trailing zero fields are trimmed,
+// which keeps the URL a few times shorter than JSON. Only URL-safe characters
+// (0-9a-z, '-', '_', '.') are produced, so the fragment needs no escaping.
+function encodeLogForShare(log) {
+  var rows = log.slice().sort(function(a, b) { return a.ts - b.ts; });
+  if (rows.length === 0) return '';
+  var base = rows[0].ts;
+  var prev = base;
+  var parts = [];
+  for (var i = 0; i < rows.length; i++) {
+    var ev = rows[i];
+    var delta = ev.ts - prev;
+    prev = ev.ts;
+    var f = [
+      (ev.type || 0).toString(36),
+      (delta < 0 ? 0 : delta).toString(36),
+      (ev.vol || 0).toString(36),
+      (ev.diaper || 0).toString(36)
+    ];
+    while (f.length > 2 && f[f.length - 1] === '0') {
+      f.pop();
+    }
+    parts.push(f.join('-'));
+  }
+  return '1.' + base.toString(36) + '.' + parts.join('_');
+}
+
 // Build the event-log page shown via the companion app's "settings" link.
 function generateLogPage() {
   var log = [];
@@ -244,6 +277,7 @@ function generateLogPage() {
   log.sort(function(a, b) { return b.ts - a.ts; });
 
   var csv = buildCsv(log);
+  var shareUrl = log.length ? (SHARE_BASE_URL + '#' + encodeLogForShare(log)) : '';
 
   var body = '';
   if (log.length === 0) {
@@ -289,6 +323,11 @@ function generateLogPage() {
     '.btn-export { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; margin-top: 24px; }\n' +
     '.btn-clear { background: transparent; color: #aaa; border: 1px solid #666; }\n' +
     '#exportBox { margin: 8px 0; }\n' +
+    '.btn-share { background: transparent; color: #4cc9f0; border: 1px solid #4cc9f0; font-weight: 600; }\n' +
+    '#shareBox { margin: 8px 0; }\n' +
+    '.warn { color: #f0a000; font-size: 13px; line-height: 1.5; margin: 8px 2px; }\n' +
+    '#shareText { width: 100%; height: 90px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; box-sizing: border-box; word-break: break-all; resize: vertical; }\n' +
+    '#shareMsg { display: block; text-align: center; color: #4cc9f0; font-size: 13px; min-height: 18px; }\n' +
     '#csvText { width: 100%; height: 160px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }\n' +
     '.btn-copy { background: #4cc9f0; color: #1a1a2e; border: none; font-weight: 600; }\n' +
     '.btn-download { display: block; text-align: center; padding: 14px; border-radius: 8px; border: 1px solid #4cc9f0; color: #4cc9f0; text-decoration: none; margin: 8px 0; }\n' +
@@ -305,10 +344,19 @@ function generateLogPage() {
       '<a id="csvDownload" class="btn-download" download="baby-log.csv">Download .csv file</a>\n' +
       '<span id="copyMsg"></span>\n' +
       '</div>\n' +
+      '<button class="btn btn-share" onclick="showShare()">Share Link</button>\n' +
+      '<div id="shareBox" style="display:none">\n' +
+      '<p class="warn">Anyone with this link can see the whole log, and it cannot be revoked. The data is inside the link itself.</p>\n' +
+      '<textarea id="shareText" readonly></textarea>\n' +
+      '<button class="btn btn-copy" onclick="copyShare()">Copy link</button>\n' +
+      '<a id="shareOpen" class="btn-download" target="_blank" rel="noopener">Open link</a>\n' +
+      '<span id="shareMsg"></span>\n' +
+      '</div>\n' +
       '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n'
       : '') +
     '<script>\n' +
     'var CSV_DATA = ' + JSON.stringify(csv) + ';\n' +
+    'var SHARE_URL = ' + JSON.stringify(shareUrl) + ';\n' +
     'function showExport() {\n' +
     '  document.getElementById("csvText").value = CSV_DATA;\n' +
     '  document.getElementById("csvDownload").href = "data:text/csv;charset=utf-8," + encodeURIComponent(CSV_DATA);\n' +
@@ -322,6 +370,20 @@ function generateLogPage() {
     '  var ok = false;\n' +
     '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
     '  document.getElementById("copyMsg").textContent = ok ? "Copied to clipboard!" : "Select the text above and copy manually.";\n' +
+    '}\n' +
+    'function showShare() {\n' +
+    '  document.getElementById("shareText").value = SHARE_URL;\n' +
+    '  document.getElementById("shareOpen").href = SHARE_URL;\n' +
+    '  document.getElementById("shareBox").style.display = "block";\n' +
+    '}\n' +
+    'function copyShare() {\n' +
+    '  var t = document.getElementById("shareText");\n' +
+    '  t.focus();\n' +
+    '  t.select();\n' +
+    '  t.setSelectionRange(0, SHARE_URL.length);\n' +
+    '  var ok = false;\n' +
+    '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
+    '  document.getElementById("shareMsg").textContent = ok ? "Link copied!" : "Select the link above and copy manually.";\n' +
     '}\n' +
     'function clearLog() {\n' +
     '  if (confirm("Clear all logged events? This cannot be undone.")) {\n' +

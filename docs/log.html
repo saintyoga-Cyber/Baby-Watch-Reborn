@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Baby Watch Log</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 16px; background: #1a1a2e; color: #eee; margin: 0; }
+  h1 { color: #4cc9f0; font-size: 22px; margin: 4px 0 4px 0; text-align: center; }
+  .sub { text-align: center; color: #888; font-size: 13px; margin-bottom: 18px; }
+  .day { color: #4cc9f0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 4px 8px 4px; }
+  .row { display: flex; align-items: center; background: #16213e; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+  .icon { font-size: 22px; margin-right: 14px; width: 26px; text-align: center; }
+  .rinfo { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .name { color: #fff; font-size: 16px; }
+  .detail { color: #4cc9f0; font-size: 13px; margin-top: 2px; }
+  .time { color: #aaa; font-size: 14px; margin-left: 12px; white-space: nowrap; }
+  .empty { text-align: center; color: #888; font-size: 16px; margin-top: 60px; line-height: 1.6; }
+  .wrap { max-width: 620px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Baby Watch Log</h1>
+  <div class="sub" id="sub"></div>
+  <div id="log"></div>
+</div>
+
+<script>
+// Baby Watch Reborn - shared log viewer.
+//
+// The log is carried entirely in the URL fragment (#...), which browsers never
+// send to the server - so this page's host never receives the data. This file
+// contains no data of its own; with no fragment it renders an empty state.
+//
+// SECURITY: everything decoded from the fragment is coerced to a Number, event
+// labels come from the fixed table below (never from the URL), and all text is
+// inserted with textContent. Nothing from the fragment reaches innerHTML.
+(function () {
+  var EVENT_INFO = {
+    1: { name: 'Bottle Feed',   emoji: '🍼' },
+    2: { name: 'Diaper Change', emoji: '🧷' },
+    3: { name: 'Sleep Started', emoji: '😴' },
+    4: { name: 'Sleep Ended',   emoji: '☀️' }
+  };
+  var MAX_ENTRIES = 5000; // hard cap, guards against a hostile/huge fragment
+
+  function diaperTypeName(t) {
+    return t === 1 ? 'Pee' : t === 2 ? 'Poo' : t === 3 ? 'Both' : null;
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function formatTime(ts) {
+    var d = new Date(ts * 1000);
+    var h = d.getHours();
+    var m = d.getMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; h = h ? h : 12;
+    return h + ':' + pad2(m) + ' ' + ampm;
+  }
+
+  function formatDuration(seconds) {
+    if (seconds < 0) seconds = 0;
+    var mins = Math.round(seconds / 60);
+    var h = Math.floor(mins / 60);
+    var m = mins % 60;
+    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+  }
+
+  function dayLabel(date) {
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var that = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    var diff = Math.round((today.getTime() - that.getTime()) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    var wd = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var label = wd[date.getDay()] + ', ' + mo[date.getMonth()] + ' ' + date.getDate();
+    if (date.getFullYear() !== now.getFullYear()) label += ', ' + date.getFullYear();
+    return label;
+  }
+
+  // Decode "1.<baseTs36>.<type-dTs-vol-diaper>_<...>" into event objects.
+  // Every field is parsed as a base-36 integer; anything malformed is dropped.
+  function decodeLog(str) {
+    var out = [];
+    if (!str) return out;
+    var parts = str.split('.');
+    if (parts.length < 2 || parts[0] !== '1') return out;
+    var base = parseInt(parts[1], 36);
+    if (!isFinite(base)) return out;
+    var items = parts[2] ? parts[2].split('_') : [];
+    var prev = base;
+    for (var i = 0; i < items.length && out.length < MAX_ENTRIES; i++) {
+      var f = items[i].split('-');
+      if (f.length < 2) continue;
+      var type = parseInt(f[0], 36);
+      var dts = parseInt(f[1], 36);
+      var vol = f.length > 2 ? parseInt(f[2], 36) : 0;
+      var diaper = f.length > 3 ? parseInt(f[3], 36) : 0;
+      if (!isFinite(type) || !isFinite(dts)) continue;
+      if (!EVENT_INFO[type]) continue;               // only known event types
+      var ts = prev + dts;
+      prev = ts;
+      out.push({
+        type: type,
+        ts: ts,
+        vol: isFinite(vol) ? vol : 0,
+        diaper: isFinite(diaper) ? diaper : 0
+      });
+    }
+    return out;
+  }
+
+  function detailFor(ev, rows, i) {
+    if (ev.type === 1 && ev.vol) return ev.vol + ' mL';
+    if (ev.type === 2) return diaperTypeName(ev.diaper) || '';
+    if (ev.type === 4) {
+      // rows are newest-first here; scan toward older for the nearest start.
+      for (var j = i + 1; j < rows.length; j++) {
+        if (rows[j].type === 3 && rows[j].ts <= ev.ts) {
+          return formatDuration(ev.ts - rows[j].ts);
+        }
+      }
+    }
+    return '';
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text; // never innerHTML
+    return n;
+  }
+
+  function render() {
+    var container = document.getElementById('log');
+    var sub = document.getElementById('sub');
+    var raw = window.location.hash ? window.location.hash.substring(1) : '';
+    var rows;
+    try {
+      rows = decodeLog(decodeURIComponent(raw));
+    } catch (e) {
+      rows = [];
+    }
+
+    if (!rows.length) {
+      container.appendChild(el('div', 'empty', 'No log data in this link.'));
+      return;
+    }
+
+    rows.sort(function (a, b) { return b.ts - a.ts; }); // newest first
+    sub.textContent = rows.length + (rows.length === 1 ? ' event' : ' events');
+
+    var lastDay = null;
+    for (var i = 0; i < rows.length; i++) {
+      var ev = rows[i];
+      var date = new Date(ev.ts * 1000);
+      var key = date.toDateString();
+      if (key !== lastDay) {
+        container.appendChild(el('div', 'day', dayLabel(date)));
+        lastDay = key;
+      }
+      var info = EVENT_INFO[ev.type];
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'icon', info.emoji));
+      var rinfo = el('span', 'rinfo');
+      rinfo.appendChild(el('span', 'name', info.name));
+      var detail = detailFor(ev, rows, i);
+      if (detail) rinfo.appendChild(el('span', 'detail', detail));
+      row.appendChild(rinfo);
+      row.appendChild(el('span', 'time', formatTime(ev.ts)));
+      container.appendChild(row);
+    }
+  }
+
+  render();
+  window.addEventListener('hashchange', function () {
+    document.getElementById('log').textContent = '';
+    document.getElementById('sub').textContent = '';
+    render();
+  });
+})();
+</script>
+</body>
+</html>

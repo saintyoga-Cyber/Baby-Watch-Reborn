@@ -20,6 +20,13 @@ var LOG_MAX_ENTRIES = 1000;
 // PERSONAL BUILD ONLY - this share feature is not in the Pebble store build.
 var SHARE_BASE_URL = 'https://saintyoga-cyber.github.io/baby-watch-reborn/log.html';
 
+// Live sharing: the log is mirrored to a secret GitHub Gist so one stable link
+// keeps showing fresh data. The token is entered on the settings screen and
+// kept in localStorage on this phone only - it is never committed to the repo.
+var GIST_TOKEN_KEY = 'babyWatchGistToken';
+var GIST_ID_KEY = 'babyWatchGistId';
+var GIST_FILENAME = 'baby-log.json';
+
 // Event names + timeline icons (fixed defaults; previously user-configurable)
 var EVENT_INFO = {
   1: { name: "Bottle Feed",   icon: "system://images/DINNER_RESERVATION", emoji: "🍼" },
@@ -124,14 +131,77 @@ function getPayloadValue(payload, stringKey, numericKey) {
   return undefined;
 }
 
+// Read the stored log, tolerating a missing or corrupt key.
+function readLog() {
+  try {
+    var parsed = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+    return Object.prototype.toString.call(parsed) === '[object Array]' ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function readSetting(key) {
+  try {
+    return localStorage.getItem(key) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+// Mirror the log to a secret Gist so the shared link always shows fresh data.
+// Fire-and-forget: failures are logged but never block logging or timeline pins.
+function syncToGist(callback) {
+  var token = readSetting(GIST_TOKEN_KEY);
+  if (!token) {
+    if (callback) callback(false, 'No token configured');
+    return;
+  }
+
+  var payload = { description: 'Baby Watch Reborn log', files: {} };
+  payload.files[GIST_FILENAME] = {
+    content: JSON.stringify({ v: 1, updated: Math.floor(Date.now() / 1000), events: readLog() })
+  };
+
+  var gistId = readSetting(GIST_ID_KEY);
+  if (!gistId) {
+    payload.public = false;   // secret gist; only honoured on create
+  }
+
+  var xhr = new XMLHttpRequest();
+  xhr.open(gistId ? 'PATCH' : 'POST',
+           gistId ? 'https://api.github.com/gists/' + gistId : 'https://api.github.com/gists');
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.setRequestHeader('Accept', 'application/vnd.github+json');
+  xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+  xhr.onload = function () {
+    if (this.status >= 200 && this.status < 300) {
+      try {
+        var res = JSON.parse(this.responseText);
+        if (res.id && res.id !== gistId) {
+          localStorage.setItem(GIST_ID_KEY, res.id);
+          console.log('gist: created ' + res.id);
+        }
+        console.log('gist: sync ok');
+        if (callback) callback(true, res.id || gistId);
+      } catch (e) {
+        if (callback) callback(false, 'Unreadable response');
+      }
+    } else {
+      console.log('gist: sync failed HTTP ' + this.status);
+      if (callback) callback(false, 'HTTP ' + this.status);
+    }
+  };
+  xhr.onerror = function () {
+    console.log('gist: network error');
+    if (callback) callback(false, 'Network error');
+  };
+  xhr.send(JSON.stringify(payload));
+}
+
 // Append an event to the on-phone log (newest first, capped at LOG_MAX_ENTRIES).
 function saveEventToLog(type, ts, vol, diaper) {
-  var log = [];
-  try {
-    log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
-  } catch (e) {
-    log = [];
-  }
+  var log = readLog();
   log.unshift({ type: type, ts: ts, vol: vol || 0, diaper: diaper || 0 });
   if (log.length > LOG_MAX_ENTRIES) {
     log = log.slice(0, LOG_MAX_ENTRIES);
@@ -268,16 +338,16 @@ function encodeLogForShare(log) {
 
 // Build the event-log page shown via the companion app's "settings" link.
 function generateLogPage() {
-  var log = [];
-  try {
-    log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
-  } catch (e) {
-    log = [];
-  }
+  var log = readLog();
   log.sort(function(a, b) { return b.ts - a.ts; });
 
   var csv = buildCsv(log);
   var shareUrl = log.length ? (SHARE_BASE_URL + '#' + encodeLogForShare(log)) : '';
+
+  // Live link: stable URL backed by the secret Gist (auto-updates).
+  var gistId = readSetting(GIST_ID_KEY);
+  var hasToken = !!readSetting(GIST_TOKEN_KEY);
+  var liveUrl = gistId ? (SHARE_BASE_URL + '#g=' + gistId) : '';
 
   var body = '';
   if (log.length === 0) {
@@ -324,6 +394,11 @@ function generateLogPage() {
     '.btn-clear { background: transparent; color: #aaa; border: 1px solid #666; }\n' +
     '#exportBox { margin: 8px 0; }\n' +
     '.btn-share { background: transparent; color: #4cc9f0; border: 1px solid #4cc9f0; font-weight: 600; }\n' +
+    '.sh { color: #4cc9f0; font-size: 15px; margin: 18px 2px 4px 2px; }\n' +
+    '.hint { color: #aaa; font-size: 13px; line-height: 1.5; margin: 4px 2px 8px 2px; }\n' +
+    '#tokenInput { width: 100%; padding: 12px; border: 1px solid #0f3460; border-radius: 8px; background: #0f3460; color: #fff; font-size: 15px; box-sizing: border-box; margin-bottom: 4px; }\n' +
+    '#liveText { width: 100%; height: 70px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; box-sizing: border-box; word-break: break-all; resize: vertical; }\n' +
+    '#liveMsg { display: block; text-align: center; color: #4cc9f0; font-size: 13px; min-height: 18px; }\n' +
     '#shareBox { margin: 8px 0; }\n' +
     '.warn { color: #f0a000; font-size: 13px; line-height: 1.5; margin: 8px 2px; }\n' +
     '#shareText { width: 100%; height: 90px; background: #0f3460; color: #eee; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; box-sizing: border-box; word-break: break-all; resize: vertical; }\n' +
@@ -346,10 +421,25 @@ function generateLogPage() {
       '</div>\n' +
       '<button class="btn btn-share" onclick="showShare()">Share Link</button>\n' +
       '<div id="shareBox" style="display:none">\n' +
-      '<p class="warn">Anyone with this link can see the whole log, and it cannot be revoked. The data is inside the link itself.</p>\n' +
+      (liveUrl ?
+        '<h3 class="sh">Live link (updates automatically)</h3>\n' +
+        '<p class="hint">Send this once. It refreshes every time it is opened.</p>\n' +
+        '<textarea id="liveText" readonly></textarea>\n' +
+        '<button class="btn btn-copy" onclick="copyLive()">Copy live link</button>\n' +
+        '<a id="liveOpen" class="btn-download" target="_blank" rel="noopener">Open live link</a>\n' +
+        '<span id="liveMsg"></span>\n'
+        :
+        '<h3 class="sh">Live link — not set up yet</h3>\n' +
+        '<p class="hint">Paste a GitHub token with only the <b>gist</b> scope. It is stored on this phone only and is never put in the link. Saving creates a secret Gist and gives you one stable URL.</p>\n' +
+        '<input type="password" id="tokenInput" placeholder="ghp_..." autocomplete="off" autocapitalize="none" spellcheck="false">\n' +
+        '<button class="btn btn-copy" onclick="saveToken()">Save token &amp; create link</button>\n'
+      ) +
+      (hasToken && !liveUrl ? '<p class="warn">Token saved, but no Gist yet — log an event (or reopen this page) to create it.</p>\n' : '') +
+      '<h3 class="sh">Snapshot link</h3>\n' +
+      '<p class="warn">Frozen copy: the data is inside the link, so it never updates and cannot be revoked.</p>\n' +
       '<textarea id="shareText" readonly></textarea>\n' +
-      '<button class="btn btn-copy" onclick="copyShare()">Copy link</button>\n' +
-      '<a id="shareOpen" class="btn-download" target="_blank" rel="noopener">Open link</a>\n' +
+      '<button class="btn btn-copy" onclick="copyShare()">Copy snapshot link</button>\n' +
+      '<a id="shareOpen" class="btn-download" target="_blank" rel="noopener">Open snapshot</a>\n' +
       '<span id="shareMsg"></span>\n' +
       '</div>\n' +
       '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n'
@@ -371,20 +461,32 @@ function generateLogPage() {
     '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
     '  document.getElementById("copyMsg").textContent = ok ? "Copied to clipboard!" : "Select the text above and copy manually.";\n' +
     '}\n' +
+    'var LIVE_URL = ' + JSON.stringify(liveUrl) + ';\n' +
     'function showShare() {\n' +
     '  document.getElementById("shareText").value = SHARE_URL;\n' +
     '  document.getElementById("shareOpen").href = SHARE_URL;\n' +
+    '  if (LIVE_URL) {\n' +
+    '    document.getElementById("liveText").value = LIVE_URL;\n' +
+    '    document.getElementById("liveOpen").href = LIVE_URL;\n' +
+    '  }\n' +
     '  document.getElementById("shareBox").style.display = "block";\n' +
     '}\n' +
-    'function copyShare() {\n' +
-    '  var t = document.getElementById("shareText");\n' +
+    'function copyField(id, value, msgId, label) {\n' +
+    '  var t = document.getElementById(id);\n' +
     '  t.focus();\n' +
     '  t.select();\n' +
-    '  t.setSelectionRange(0, SHARE_URL.length);\n' +
+    '  t.setSelectionRange(0, value.length);\n' +
     '  var ok = false;\n' +
     '  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }\n' +
-    '  document.getElementById("shareMsg").textContent = ok ? "Link copied!" : "Select the link above and copy manually.";\n' +
+    '  document.getElementById(msgId).textContent = ok ? (label + " copied!") : "Select the text above and copy manually.";\n' +
     '}\n' +
+    'function copyLive() { copyField("liveText", LIVE_URL, "liveMsg", "Live link"); }\n' +
+    'function saveToken() {\n' +
+    '  var v = document.getElementById("tokenInput").value.replace(/^\\s+|\\s+$/g, "");\n' +
+    '  if (!v) { alert("Paste a token first."); return; }\n' +
+    '  window.location.href = "pebblejs://close#" + encodeURIComponent(JSON.stringify({ action: "saveToken", token: v }));\n' +
+    '}\n' +
+    'function copyShare() { copyField("shareText", SHARE_URL, "shareMsg", "Snapshot link"); }\n' +
     'function clearLog() {\n' +
     '  if (confirm("Clear all logged events? This cannot be undone.")) {\n' +
     '    window.location.href = "pebblejs://close#" + encodeURIComponent(JSON.stringify({ action: "clearLog" }));\n' +
@@ -420,6 +522,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
     if (data && data.action === 'clearLog') {
       localStorage.removeItem(LOG_KEY);
       console.log('Event log cleared');
+      syncToGist();   // push the emptied log so the shared link clears too
+    } else if (data && data.action === 'saveToken' && data.token) {
+      localStorage.setItem(GIST_TOKEN_KEY, data.token);
+      console.log('gist: token saved, creating gist...');
+      syncToGist(function (ok, info) {
+        console.log('gist: setup ' + (ok ? 'ok, id=' + info : 'failed: ' + info));
+      });
     }
   } catch (err) {
     console.log('Error parsing webview response: ' + err);
@@ -440,6 +549,7 @@ Pebble.addEventListener('appmessage', function(e) {
   if (eventType !== undefined && timestamp !== undefined) {
     pushTimelinePin(eventType, timestamp, volume, diaperType);
     saveEventToLog(eventType, timestamp, volume, diaperType);
+    syncToGist();   // keeps the shared link fresh; no-op when not configured
   } else {
     console.log('ERROR: Missing data. Keys: ' + Object.keys(e.payload).join(', '));
   }

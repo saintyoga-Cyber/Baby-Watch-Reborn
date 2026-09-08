@@ -18,12 +18,14 @@
   .time { color: #aaa; font-size: 14px; margin-left: 12px; white-space: nowrap; }
   .empty { text-align: center; color: #888; font-size: 16px; margin-top: 60px; line-height: 1.6; }
   .wrap { max-width: 620px; margin: 0 auto; }
+  .sub a { color: #4cc9f0; text-decoration: none; font-size: 13px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Baby Watch Log</h1>
   <div class="sub" id="sub"></div>
+  <div class="sub"><a href="#" id="refresh">Refresh</a></div>
   <div id="log"></div>
 </div>
 
@@ -136,24 +138,106 @@
     return n;
   }
 
+  // Accept only real Gist ids so nothing from the URL can reshape the API call.
+  function validGistId(id) {
+    return /^[0-9a-fA-F]{6,64}$/.test(id);
+  }
+
+  // Coerce anything arriving from the Gist into safe numeric events.
+  function sanitize(list) {
+    var out = [];
+    if (Object.prototype.toString.call(list) !== '[object Array]') return out;
+    for (var i = 0; i < list.length && out.length < MAX_ENTRIES; i++) {
+      var e = list[i];
+      if (!e) continue;
+      var type = Number(e.type);
+      var ts = Number(e.ts);
+      if (!EVENT_INFO[type] || !isFinite(ts)) continue;
+      var vol = Number(e.vol);
+      var diaper = Number(e.diaper);
+      out.push({
+        type: type,
+        ts: ts,
+        vol: isFinite(vol) ? vol : 0,
+        diaper: isFinite(diaper) ? diaper : 0
+      });
+    }
+    return out;
+  }
+
+  function fetchGist(id, cb) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'https://api.github.com/gists/' + id + '?t=' + Date.now());
+    xhr.setRequestHeader('Accept', 'application/vnd.github+json');
+    xhr.onload = function () {
+      if (this.status < 200 || this.status >= 300) { cb(null, 'HTTP ' + this.status); return; }
+      try {
+        var gist = JSON.parse(this.responseText);
+        var files = gist.files || {};
+        var file = files['baby-log.json'];
+        if (!file) {
+          for (var k in files) { if (files.hasOwnProperty(k)) { file = files[k]; break; } }
+        }
+        if (!file || !file.content) { cb(null, 'Log file missing'); return; }
+        var data = JSON.parse(file.content);
+        cb({ events: sanitize(data.events), updated: Number(data.updated) || 0 }, null);
+      } catch (e) {
+        cb(null, 'Unreadable log data');
+      }
+    };
+    xhr.onerror = function () { cb(null, 'Network error'); };
+    xhr.send();
+  }
+
+  function ago(ts) {
+    if (!ts) return '';
+    var s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+    if (s < 90) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  }
+
   function render() {
-    var container = document.getElementById('log');
-    var sub = document.getElementById('sub');
     var raw = window.location.hash ? window.location.hash.substring(1) : '';
+    if (raw.indexOf('g=') === 0) {
+      var id = raw.substring(2);
+      if (!validGistId(id)) { paint([], 'This link is malformed.'); return; }
+      document.getElementById('sub').textContent = 'Loading…';
+      fetchGist(id, function (res, err) {
+        if (err) { paint([], 'Could not load the log (' + err + ').'); return; }
+        paint(res.events, null, res.updated);
+      });
+      return;
+    }
     var rows;
     try {
       rows = decodeLog(decodeURIComponent(raw));
     } catch (e) {
       rows = [];
     }
+    paint(rows, null);
+  }
 
+  function paint(rows, message, updated) {
+    var container = document.getElementById('log');
+    var sub = document.getElementById('sub');
+    container.textContent = '';
+
+    if (message) {
+      sub.textContent = '';
+      container.appendChild(el('div', 'empty', message));
+      return;
+    }
     if (!rows.length) {
+      sub.textContent = '';
       container.appendChild(el('div', 'empty', 'No log data in this link.'));
       return;
     }
 
     rows.sort(function (a, b) { return b.ts - a.ts; }); // newest first
-    sub.textContent = rows.length + (rows.length === 1 ? ' event' : ' events');
+    sub.textContent = rows.length + (rows.length === 1 ? ' event' : ' events') +
+      (updated ? ' · updated ' + ago(updated) : '');
 
     var lastDay = null;
     for (var i = 0; i < rows.length; i++) {
@@ -178,9 +262,16 @@
   }
 
   render();
-  window.addEventListener('hashchange', function () {
-    document.getElementById('log').textContent = '';
-    document.getElementById('sub').textContent = '';
+  window.addEventListener('hashchange', render);
+
+  // Re-fetch whenever the page is brought back into view, so simply reopening
+  // the link (or switching back to the tab) shows the latest events.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) render();
+  });
+  window.addEventListener('focus', render);
+  document.getElementById('refresh').addEventListener('click', function (e) {
+    e.preventDefault();
     render();
   });
 })();

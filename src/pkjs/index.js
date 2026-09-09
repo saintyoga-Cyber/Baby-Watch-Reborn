@@ -394,6 +394,8 @@ function generateLogPage() {
     '.btn-clear { background: transparent; color: #aaa; border: 1px solid #666; }\n' +
     '#exportBox { margin: 8px 0; }\n' +
     '.btn-share { background: transparent; color: #4cc9f0; border: 1px solid #4cc9f0; font-weight: 600; }\n' +
+    '.actions { border-bottom: 1px solid #0f3460; padding-bottom: 12px; margin-bottom: 4px; }\n' +
+    '.actions .btn { margin: 6px 0; }\n' +
     '.sh { color: #4cc9f0; font-size: 15px; margin: 18px 2px 4px 2px; }\n' +
     '.hint { color: #aaa; font-size: 13px; line-height: 1.5; margin: 4px 2px 8px 2px; }\n' +
     '#tokenInput { width: 100%; padding: 12px; border: 1px solid #0f3460; border-radius: 8px; background: #0f3460; color: #fff; font-size: 15px; box-sizing: border-box; margin-bottom: 4px; }\n' +
@@ -410,8 +412,10 @@ function generateLogPage() {
     '</style>\n' +
     '</head><body>\n' +
     '<h1>Baby Watch Log</h1>\n' +
-    body + '\n' +
+    // Actions sit above the list: with many days logged they would otherwise be
+    // buried below every entry and effectively undiscoverable.
     (log.length > 0 ?
+      '<div class="actions">\n' +
       '<button class="btn btn-export" onclick="showExport()">Export CSV</button>\n' +
       '<div id="exportBox" style="display:none">\n' +
       '<textarea id="csvText" readonly></textarea>\n' +
@@ -442,8 +446,11 @@ function generateLogPage() {
       '<a id="shareOpen" class="btn-download" target="_blank" rel="noopener">Open snapshot</a>\n' +
       '<span id="shareMsg"></span>\n' +
       '</div>\n' +
-      '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n'
+      '</div>\n'
       : '') +
+    body + '\n' +
+    // Destructive action stays at the bottom, away from the common taps.
+    (log.length > 0 ? '<button class="btn btn-clear" onclick="clearLog()">Clear Log</button>\n' : '') +
     '<script>\n' +
     'var CSV_DATA = ' + JSON.stringify(csv) + ';\n' +
     'var SHARE_URL = ' + JSON.stringify(shareUrl) + ';\n' +
